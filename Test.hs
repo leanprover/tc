@@ -143,6 +143,7 @@ one_expr = mk_app succ_expr zero_expr
 two_expr = mk_app succ_expr one_expr
 
 add_two_expr = mk_lambda (mk_name "add_two") nat_expr (mk_app succ_expr (mk_app succ_expr (mk_var 0))) BinderDefault
+
 three_expr = mk_app add_two_expr one_expr
 
 load_nat :: RunnerMethod ()
@@ -154,14 +155,8 @@ load_nat = do
 three_example :: RunnerMethod Expression
 three_example = do
   load_nat
-  three_type <- my_infer_type three_expr
+  three_type <- my_infer_type (mk_app add_two_expr one_expr)
   return three_type
-
-add_two_example :: RunnerMethod Expression
-add_two_example = do
-  load_nat
-  add_two_type <- my_infer_type add_two_expr
-  return add_two_type
 
 prop_type_is_type1 :: RunnerMethod Expression
 prop_type_is_type1 = my_infer_type mk_Prop
@@ -177,6 +172,7 @@ nat_to_nat_type_is_type1 = do
 
 test_basic_typechecking = do
   putStrLn "test_basic_typechecking"
+  assertEqual (evalStateT three_example empty_environment) (Right nat_expr)
   assertEqual (evalStateT prop_type_is_type1 empty_environment) (Right mk_Type)
   assertEqual (evalStateT type1_type_is_type2 empty_environment) (Right (mk_sort . mk_succ . mk_succ $ mk_zero))
   assertEqual (evalStateT nat_to_nat_type_is_type1 empty_environment) (Right mk_Type)
