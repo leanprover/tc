@@ -25,7 +25,7 @@ data TypeError = UndefGlobalUniv Name
                | WrongNumUnivParams
                | KernelError
                | NYI
-                 deriving Show
+                 deriving (Eq,Show)
 
 data TypeChecker = TypeChecker { tc_env :: Environment , tc_level_names :: [Name] }
 type Gensym = StateT Integer

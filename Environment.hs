@@ -19,7 +19,7 @@ data Declaration = Declaration { decl_name :: Name,
                                  decl_type :: Expression,
                                  decl_is_thm :: Bool,
                                  decl_mb_val :: Maybe Expression,
-                                 decl_weight :: Integer } deriving (Show)
+                                 decl_weight :: Integer } deriving (Eq,Show)
 
 -- The `env` args are used to compute the declaration weights
 mk_definition env name level_param_names t v =

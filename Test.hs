@@ -1,8 +1,12 @@
 module Test where
 
+import Control.Monad.State
+
 import Name
 import Level
 import Expression
+import Environment
+import TypeChecker
 
 -- Assert functions
 -- TODO these are awful
@@ -108,4 +112,73 @@ test_free_vars = let f = mk_constant (mk_name "f") []
                        assertEqual (lift_free_vars s1 3) s1_l3                       
                        assertEqual (lift_free_vars t2 3) t2_l3
 
-main = test_levels >> test_exprs >> test_instantiate >> test_free_vars
+-- Basic type checking
+
+type RunnerMethod = StateT Environment (Either TypeError)
+
+my_check :: Declaration -> RunnerMethod CertifiedDeclaration
+my_check decl = do
+  env <- get
+  lift $ check env decl
+
+my_infer_type :: Expression -> RunnerMethod Expression
+my_infer_type e = do
+  env <- get
+  lift (tc_run env [] 0 (infer_type e))
+
+my_add_to_env :: CertifiedDeclaration -> RunnerMethod ()
+my_add_to_env cdecl = modify (flip env_add cdecl)
+
+-- nat
+nat_assumption = mk_constant_assumption (mk_name "nat") [] (mk_sort (mk_succ mk_zero))
+nat_expr = mk_constant (mk_name "nat") []
+
+zero_assumption = mk_constant_assumption (mk_name "zero") [] nat_expr
+zero_expr = mk_constant (mk_name "zero") []
+
+succ_assumption = mk_constant_assumption (mk_name "succ") [] (mk_pi (mk_name "pred") nat_expr nat_expr BinderDefault)
+succ_expr = mk_constant (mk_name "succ") []
+
+one_expr = mk_app succ_expr zero_expr
+two_expr = mk_app succ_expr one_expr
+
+add_two_expr = mk_lambda (mk_name "add_two") nat_expr (mk_app succ_expr (mk_app succ_expr (mk_var 0))) BinderDefault
+three_expr = mk_app add_two_expr one_expr
+
+load_nat :: RunnerMethod ()
+load_nat = do
+  my_check nat_assumption >>= my_add_to_env
+  my_check zero_assumption >>= my_add_to_env
+  my_check succ_assumption >>= my_add_to_env
+
+three_example :: RunnerMethod Expression
+three_example = do
+  load_nat
+  three_type <- my_infer_type three_expr
+  return three_type
+
+add_two_example :: RunnerMethod Expression
+add_two_example = do
+  load_nat
+  add_two_type <- my_infer_type add_two_expr
+  return add_two_type
+
+prop_type_is_type1 :: RunnerMethod Expression
+prop_type_is_type1 = my_infer_type mk_Prop
+
+type1_type_is_type2 :: RunnerMethod Expression
+type1_type_is_type2 = my_infer_type (mk_sort (mk_succ mk_zero))
+
+nat_to_nat_type_is_type1 :: RunnerMethod Expression
+nat_to_nat_type_is_type1 = do
+  load_nat
+  add_two_type <- my_infer_type add_two_expr
+  my_infer_type add_two_type
+
+test_basic_typechecking = do
+  putStrLn "test_basic_typechecking"
+  assertEqual (evalStateT prop_type_is_type1 empty_environment) (Right mk_Type)
+  assertEqual (evalStateT type1_type_is_type2 empty_environment) (Right (mk_sort . mk_succ . mk_succ $ mk_zero))
+  assertEqual (evalStateT nat_to_nat_type_is_type1 empty_environment) (Right mk_Type)
+                       
+main = test_levels >> test_exprs >> test_instantiate >> test_free_vars >> test_basic_typechecking
