@@ -254,22 +254,23 @@ is_def_eq t s = do
 deq_commit_to :: DefEqMethod () -> DefEqMethod ()
 deq_commit_to def_eq = def_eq >> throwE False
 
--- | 'deq_try_seq' proceeds through its arguments, and short-circuits with True if all arguments short-circuit with True, otherwise it does nothing.
-deq_try_seq :: [DefEqMethod ()] -> DefEqMethod ()
-deq_try_seq [] = throwE True
-deq_try_seq (def_eq:def_eqs) = do
+-- | 'deq_try_and' proceeds through its arguments, and short-circuits with True if all arguments short-circuit with True, otherwise it does nothing.
+deq_try_and :: [DefEqMethod ()] -> DefEqMethod ()
+deq_try_and [] = throwE True
+deq_try_and (def_eq:def_eqs) = do
   success <- lift $ runExceptT def_eq
   case success of
-    Left True -> deq_try_seq def_eqs
+    Left True -> deq_try_and def_eqs
     _ -> return ()
 
-deq_any_of :: [DefEqMethod ()] -> DefEqMethod ()
-deq_any_of [] = throwE False
-deq_any_of (def_eq:def_eqs) = do
+-- | 'deq_try_or' proceeds through its arguments, and short-circuits with True if any of its arguments short-circuit with True, otherwise it does nothing.
+deq_try_or :: [DefEqMethod ()] -> DefEqMethod ()
+deq_try_or [] = return ()
+deq_try_or (def_eq:def_eqs) = do
   success <- lift $ runExceptT def_eq
   case success of
     Left True -> throwE True
-    _ -> return ()
+    _ -> deq_try_or def_eqs
 
 {-
 deq_true_as_continue :: DefEqMethod () -> DefEqMethod ()
@@ -307,7 +308,7 @@ is_def_eq_main t s = do
     (App app1,App app2) -> deq_commit_to (is_def_eq_app t_n s_n)
     _ -> return ()
 
-  deq_try_seq [is_eq_eta_expansion t_n s_n]
+  is_eq_eta_expansion t_n s_n
   is_def_proof_irrel t_n s_n
 
 reduce_def_eq :: Expression -> Expression -> DefEqMethod (Expression,Expression)
@@ -401,16 +402,17 @@ lazy_delta_reduction_step_helper d_t d_s t s = do
 -}
 is_def_eq_app :: Expression -> Expression -> DefEqMethod ()
 is_def_eq_app t s =
-  deq_try_seq [is_def_eq_main (get_operator t) (get_operator s),
+  deq_try_and [is_def_eq_main (get_operator t) (get_operator s),
                throwE (genericLength (get_app_args t) == genericLength (get_app_args s)),
                mapM_ (uncurry is_def_eq_main) (zip (get_app_args t) (get_app_args s))]
   
 is_eq_eta_expansion :: Expression -> Expression -> DefEqMethod ()
-is_eq_eta_expansion t s = deq_any_of [is_eq_eta_expansion_core t s, is_eq_eta_expansion_core s t]
+is_eq_eta_expansion t s = deq_try_or [is_eq_by_eta_expansion_core t s, is_eq_by_eta_expansion_core s t]
 
 -- | Try to solve (fun (x : A), B) =?= s by trying eta-expansion on s
-is_eq_eta_expansion_core :: Expression -> Expression -> DefEqMethod ()
-is_eq_eta_expansion_core t s = go t s where
+-- The 'by' indicates that it short-circuits False 't' and 's' are not equal by eta-expansion, even though they may be equal for another reason. The enclosing 'deq_any_of' ignores any 'False's.
+is_eq_by_eta_expansion_core :: Expression -> Expression -> DefEqMethod ()
+is_eq_by_eta_expansion_core t s = go t s where
   go (Lambda lam1) (Lambda lam2) = throwE False
   go (Lambda lam1) s = do
     s_ty_n <- lift $ infer_type s >>= whnf
@@ -444,7 +446,7 @@ quick_is_def_eq t s = case (t,s) of
 -- | Given lambda/Pi expressions 't' and 's', return true iff 't' is def eq to 's', which holds iff 'domain(t)' is definitionally equal to 'domain(s)' and 'body(t)' is definitionally equal to 'body(s)'
 is_def_eq_binding :: BindingData -> BindingData -> DefEqMethod ()
 is_def_eq_binding bind1 bind2 = do
-  deq_try_seq  [(is_def_eq_main (binding_domain bind1) (binding_domain bind2)),
+  deq_try_and  [(is_def_eq_main (binding_domain bind1) (binding_domain bind2)),
                 do next_id <- lift gensym
                    local <- return $ mk_local (mk_system_name next_id) (binding_name bind1) (binding_domain bind1) (binding_info bind1)
                    is_def_eq_main (instantiate (binding_body bind1) local) (instantiate (binding_body bind2) local)]
