@@ -31,6 +31,7 @@ import Data.Set (Set)
 
 import qualified Data.Maybe as Maybe
 
+
 -- Declarations
 
 data Declaration = Declaration { decl_name :: Name,
@@ -70,8 +71,8 @@ data Environment = Environment {
   env_header :: EnvironmentHeader ,
   env_declarations :: Map Name Declaration,
   env_global_names :: Set Name,
---  env_quot_ext :: QuotientEnvExt,
-  env_ind_ext :: InductiveEnvExt
+  env_ind_ext :: InductiveEnvExt,
+  env_quot_enabled :: Bool
   } deriving (Show)
                    
   
@@ -91,7 +92,7 @@ is_opaque decl = False
 
 default_env_header = EnvironmentHeader { eh_prop_proof_irrel = True, eh_eta = True, eh_impredicative = True }
 empty_environment = Environment { env_header = default_env_header, env_declarations = Map.empty,
-                                  env_global_names = Set.empty, env_ind_ext = default_inductive_env_ext }
+                                  env_global_names = Set.empty, env_ind_ext = default_inductive_env_ext, env_quot_enabled = True }
 
 -- TODO confirm environment is a descendent of the current one
 -- or maybe make the kernel responsible for adding it

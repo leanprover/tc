@@ -22,6 +22,7 @@ module TypeChecker where
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Trans.Except
+import Control.Monad.Trans.Maybe
 import Data.List (nub,find,genericIndex,genericLength,genericTake,genericDrop,genericSplitAt)
 
 import qualified Data.Map as Map
@@ -233,12 +234,9 @@ unfold_name_core w e = case e of
       (lookup_declaration (tc_env tc) (const_name const))
   _ -> return e
 
--- TODO QUOTIENT iterate over all normalizer extensions
 normalize_ext :: Expression -> TCMethod (Maybe Expression)
-normalize_ext e = do
-  env <- asks tc_env
-  return $ inductive_norm_ext env e
-                            
+normalize_ext e = runMaybeT (inductive_norm_ext e `mplus` quotient_norm_ext e)
+
 
 -- is_def_eq
 
@@ -468,18 +466,20 @@ mk_certified_declaration env d = CertifiedDeclaration env d
 
 
 {- extensions -}
+lift_maybe :: (MonadPlus m) => Maybe a -> m a
+lift_maybe = maybe mzero return
 
 -- | Reduce terms 'e' of the form 'elim_k A C e p[A,b] (intro_k_i A b u)'
-inductive_norm_ext :: Environment -> Expression -> Maybe Expression
--- TODO this may throw an error (though I don't think it is possible for it to do so)
-inductive_norm_ext env e = do
-  elim_fn_const <- maybe_constant (get_operator e)
+inductive_norm_ext :: Expression -> MaybeT TCMethod Expression
+inductive_norm_ext e = do
+  elim_infos <- liftM (iext_elim_infos . env_ind_ext . tc_env) ask
+  elim_fn_const <- lift_maybe $ maybe_constant (get_operator e)
   einfo@(ExtElimInfo ind_name lp_names num_params num_ACe num_indices k_target dep_elim) <-
-    Map.lookup (const_name elim_fn_const) (iext_elim_infos $ env_ind_ext env)
+    lift_maybe $ Map.lookup (const_name elim_fn_const) elim_infos
   guard $ genericLength (get_app_args e) >= num_ACe + num_indices + 1
   let major_idx = num_ACe + num_indices
       major = genericIndex (get_app_args e) major_idx in do
-    (intro_app,comp_rule) <- find_comp_rule env einfo elim_fn_const lp_names major
+    (intro_app,comp_rule) <- find_comp_rule einfo elim_fn_const major
     let elim_args = get_app_args e
         intro_args = get_app_args intro_app in do
       guard $ genericLength intro_args == num_params + (cr_num_rec_nonrec_args comp_rule)
@@ -491,58 +491,91 @@ inductive_norm_ext env e = do
           extra_args = genericDrop (major_idx + 1) elim_args in do
         return $ mk_app_seq rhs_body_instantiated extra_args
   where
-    find_comp_rule env einfo elim_fn_const lp_names major
-      | eei_K_target einfo =
-        maybe (regular_comp_rule env einfo elim_fn_const lp_names major) Just
-        (do intro_app <- to_intro_when_K env einfo lp_names major
-            intro_app_op_const <- maybe_constant (get_operator intro_app)
-            comp_rule <- Map.lookup (const_name intro_app_op_const) (iext_comp_rules (env_ind_ext env))
-            return (intro_app,comp_rule))
-      | otherwise = regular_comp_rule env einfo elim_fn_const lp_names major
-    regular_comp_rule env einfo elim_fn_const lp_names major = do
-      intro_app <- return . skip_exceptions $ tc_run env lp_names 0 (whnf major)
-      comp_rule <- is_intro_for env (const_name elim_fn_const) intro_app
+    find_comp_rule :: ExtElimInfo -> ConstantData -> Expression -> MaybeT TCMethod (Expression,CompRule)
+    find_comp_rule einfo elim_fn_const major
+      | eei_K_target einfo = do
+        mb_result <- lift . runMaybeT $
+                     (do intro_app <- to_intro_when_K einfo major
+                         map_comp_rules <- liftM (iext_comp_rules . env_ind_ext . tc_env) ask                                     
+                         intro_app_op_const <- lift_maybe $ maybe_constant (get_operator intro_app)
+                         comp_rule <- lift_maybe $ Map.lookup (const_name intro_app_op_const) map_comp_rules
+                         return (intro_app,comp_rule))
+        case mb_result of
+          Nothing -> regular_comp_rule einfo elim_fn_const major
+          Just result -> return result
+      | otherwise = regular_comp_rule einfo elim_fn_const major
+    regular_comp_rule :: ExtElimInfo -> ConstantData -> Expression -> MaybeT TCMethod (Expression,CompRule)                    
+    regular_comp_rule einfo elim_fn_const major = do
+      intro_app <- lift $ whnf major
+      comp_rule <- is_intro_for (const_name elim_fn_const) intro_app
       return (intro_app,comp_rule)
     
 
-
 -- | Return 'True' if 'e' is an introduction rule for an eliminator named 'elim'
-is_intro_for :: Environment -> Name -> Expression -> Maybe CompRule
-is_intro_for env elim_name e = do
-  intro_fn_const <- maybe_constant (get_operator e)
-  comp_rule <- Map.lookup (const_name intro_fn_const) (iext_comp_rules $ env_ind_ext env)
+is_intro_for :: Name -> Expression -> MaybeT TCMethod CompRule
+is_intro_for elim_name e = do
+  map_comp_rules <- liftM (iext_comp_rules . env_ind_ext . tc_env) ask
+  intro_fn_const <- lift_maybe $ maybe_constant (get_operator e)
+  comp_rule <- lift_maybe $ Map.lookup (const_name intro_fn_const) map_comp_rules
   guard (cr_elim_name comp_rule == elim_name)
   return comp_rule
 
-skip_exceptions tc = case tc of
-  Left _ -> error "type checker should not throw error inside inductive_norm_ext"
-  Right e -> e
-  
 -- | For datatypes that support K-axiom, given e an element of that type, we convert (if possible)
 -- to the default constructor. For example, if (e : a = a), then this method returns (eq.refl a)
-to_intro_when_K :: Environment -> ExtElimInfo -> [Name] -> Expression -> Maybe Expression
-to_intro_when_K env einfo lp_names e = do
-  return $ assert (eei_K_target einfo) "to_intro_when_K should only be called when K_target holds"
-  app_type <- return . skip_exceptions $ tc_run env lp_names 0 (infer_type e >>= whnf)
+to_intro_when_K :: ExtElimInfo -> Expression -> MaybeT TCMethod Expression
+to_intro_when_K einfo e = do
+  env <- asks tc_env
+  assert (eei_K_target einfo) "to_intro_when_K should only be called when K_target holds" (return ())
+  app_type <- lift $ infer_type e >>= whnf
   app_type_I <- return $ get_operator app_type
-  app_type_I_const <- maybe_constant app_type_I
+  app_type_I_const <- lift_maybe $ maybe_constant app_type_I
   guard (const_name app_type_I_const == eei_inductive_name einfo)
-  new_intro_app <- mk_nullary_intro env app_type (eei_num_params einfo)
-  new_type <- return . skip_exceptions $ tc_run env lp_names 0 (infer_type new_intro_app)
-  guard (skip_exceptions $ tc_run env lp_names 0 (is_def_eq app_type new_type))
+  new_intro_app <- lift_maybe $ mk_nullary_intro env app_type (eei_num_params einfo)
+  new_type <- lift $ infer_type new_intro_app
+  types_eq <- lift $ is_def_eq app_type new_type
+  guard types_eq
   return new_intro_app
 
 -- | If 'op_name' is the name of a non-empty inductive datatype, then return the
 --   name of the first introduction rule. Return 'Nothing' otherwise.
+get_first_intro :: Environment -> Name -> Maybe Name
 get_first_intro env op_name = do
   mutual_idecls <- Map.lookup op_name (iext_ind_infos $ env_ind_ext env)
   InductiveDecl _ _ intro_rules <- find (\(InductiveDecl ind_name _ _) -> ind_name == op_name) (mid_idecls mutual_idecls)
   IntroRule ir_name _ <- find (\_ -> True) intro_rules
   return ir_name
 
-  
+mk_nullary_intro :: Environment -> Expression -> Integer -> Maybe Expression
 mk_nullary_intro env app_type num_params = 
   let (op,args) = get_app_op_args app_type in do
     op_const <- maybe_constant op
     intro_name <- get_first_intro env (const_name op_const)
     return $ mk_app_seq (mk_constant intro_name (const_levels op_const)) (genericTake num_params args)
+
+{- Quotient -}
+
+quotient_norm_ext :: Expression -> MaybeT TCMethod Expression
+quotient_norm_ext e = do
+  env <- asks tc_env
+  guard (env_quot_enabled env)
+  fn <- lift_maybe $ maybe_constant (get_operator e)
+  (mk_pos,arg_pos) <- if const_name fn == quot_lift then return (5,3) else
+                        if const_name fn == quot_ind then return (4,3) else
+                          fail "no quot comp rule applies"
+  args <- return $ get_app_args e
+  guard $ genericLength args > mk_pos
+  mk <- lift $ whnf (genericIndex args mk_pos)
+  case mk of
+    App mk_as_app -> do
+      mk_fn <- return $ get_operator mk
+      mk_fn_const <- lift_maybe $ maybe_constant mk_fn
+      guard $ const_name mk_fn_const == quot_mk
+      let f = genericIndex args arg_pos
+          elim_arity = mk_pos + 1
+          extra_args = genericDrop elim_arity args in
+        return $ mk_app_seq (mk_app f (app_arg mk_as_app)) extra_args
+    _ -> fail "element of type 'quot' not constructed with 'quot.mk'"
+    where
+      quot_lift = mk_name ["lift","quot"]
+      quot_ind = mk_name ["ind","quot"]
+      quot_mk = mk_name ["mk","quot"]
