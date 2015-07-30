@@ -250,9 +250,11 @@ is_def_eq t s = do
     Left answer -> return answer
     Right () -> return False
 
+-- | If 'def_eq' short-circuits, then 'deq_commit_to def_eq' short-circuits with the same value, otherwise it shortcircuits with False.
 deq_commit_to :: DefEqMethod () -> DefEqMethod ()
 deq_commit_to def_eq = def_eq >> throwE False
 
+-- | 'deq_try_seq' proceeds through its arguments, and short-circuits with True if all arguments short-circuit with True, otherwise it does nothing.
 deq_try_seq :: [DefEqMethod ()] -> DefEqMethod ()
 deq_try_seq [] = throwE True
 deq_try_seq (def_eq:def_eqs) = do
@@ -261,19 +263,30 @@ deq_try_seq (def_eq:def_eqs) = do
     Left True -> deq_try_seq def_eqs
     _ -> return ()
 
+deq_any_of :: [DefEqMethod ()] -> DefEqMethod ()
+deq_any_of [] = throwE False
+deq_any_of (def_eq:def_eqs) = do
+  success <- lift $ runExceptT def_eq
+  case success of
+    Left True -> throwE True
+    _ -> return ()
+
+{-
 deq_true_as_continue :: DefEqMethod () -> DefEqMethod ()
 deq_true_as_continue def_eq = do
   success <- lift $ runExceptT def_eq
   case success of
     Left True -> return ()
     _ -> throwE False
-                                    
+-}
+
 -- This exception means we know if they are equal or not
 type DefEqMethod = ExceptT Bool TCMethod
 
 -- deq_fail = lift . tc_fail
 deq_assert b err = lift $ tc_assert b err
 
+-- | 'try_if b check' tries 'check' only if 'b' is true, otherwise does nothing.
 try_if :: Bool -> DefEqMethod () -> DefEqMethod ()
 try_if b check = if b then check else return ()
 
@@ -284,26 +297,21 @@ is_def_eq_main t s = do
   t_n <- lift $ whnf_core t
   s_n <- lift $ whnf_core s
   try_if (t_n /= t || s_n /= s) (quick_is_def_eq t_n s_n)
-  -- trace "both quick_is_def_eqs failed" (return ())
   (t_n,s_n) <- reduce_def_eq t_n s_n
---  trace ("<after_reduce>" ++ show t_n) (return ())
-  -- trace "reduce_def_eq failed" (return ())  
 
   case (t_n,s_n) of
     (Constant const1, Constant const2) | const_name const1 == const_name const2 &&
                                          is_def_eq_levels (const_levels const1) (const_levels const2) -> throwE True
     (Local local1, Local local2) | local_name local1 == local_name local2 ->
       throwE True
+    (App app1,App app2) -> deq_commit_to (is_def_eq_app t_n s_n)
     _ -> return ()
 
-  is_def_eq_app t_n s_n
-  -- trace "is_def_eq_app failed" (return ())  
-  eta_expansion t_n s_n
+  deq_try_seq [is_eq_eta_expansion t_n s_n]
   is_def_proof_irrel t_n s_n
 
 reduce_def_eq :: Expression -> Expression -> DefEqMethod (Expression,Expression)
 reduce_def_eq t s = do
---  trace ("<reduce_def_eq>" ++ show t ++ " |<>| " ++ show s ++ "\n\n") (return ())
   (t,s,status) <- lazy_delta_reduction t s >>= uncurry ext_reduction_step
   case status of
     DefUnknown -> return (t,s)
@@ -330,7 +338,6 @@ ext_reduction_step t_n s_n = do
 
 lazy_delta_reduction :: Expression -> Expression -> DefEqMethod (Expression,Expression)
 lazy_delta_reduction t s = do
-  -- trace ("lazy_delta_reduction (" ++ show t ++ ") vs (" ++ show s ++ ")\n") (return ())
   (t_n,s_n,status) <- lazy_delta_reduction_step t s
   case status of
     DefUnknown -> return (t_n,s_n)    
@@ -346,6 +353,7 @@ is_delta env e = case (get_operator e) of
     _ -> Nothing
   _ -> Nothing
 
+-- | Perform one lazy delta-reduction step.
 lazy_delta_reduction_step :: Expression -> Expression -> DefEqMethod (Expression,Expression,ReductionStatus)
 lazy_delta_reduction_step t s = do
   tc <- ask
@@ -371,35 +379,47 @@ lazy_delta_reduction_step_helper d_t d_s t s = do
              return (t,s_dn)
     GT -> do t_dn <- lift (unfold_names (decl_weight d_s + 1) t >>= whnf_core)
              return (t_dn,s)
-    EQ -> do
-      -- trace "unfolding both" (return ())
-      t_dn <- lift (unfold_names (decl_weight d_s - 1) t >>= whnf_core)
-      s_dn <- lift (unfold_names (decl_weight d_t - 1) s >>= whnf_core)
-      return (t_dn,s_dn)
-    
-is_def_eq_app :: Expression -> Expression -> DefEqMethod ()
-is_def_eq_app t s = case (t,s) of
-  (App app1,App app2) -> deq_try_seq [is_def_eq_main (app_fn app1) (app_fn app2),
-                                      is_def_eq_main (app_arg app1) (app_arg app2)]
-  _ -> return ()
-  
-eta_expansion :: Expression -> Expression -> DefEqMethod ()
-eta_expansion t s = eta_expansion_core t s >> eta_expansion_core s t
+    EQ ->
+      case (t,s) of
+        (App t_app, App s_app) -> do
+          {- Optimization: we try to check if their arguments are definitionally equal.
+             If they are, then t_n and s_n must be definitionally equal,
+             and we can skip the delta-reduction step. -}
+          is_def_eq_app t s
+          reduce_both
+        _ -> reduce_both
+      where
+        reduce_both = do
+          t_dn <- lift (unfold_names (decl_weight d_s - 1) t >>= whnf_core)
+          s_dn <- lift (unfold_names (decl_weight d_t - 1) s >>= whnf_core)
+          return (t_dn,s_dn)
 
--- | Tries to eta-expand its first argument.
--- Note that it only ever throws 'True'
-eta_expansion_core :: Expression -> Expression -> DefEqMethod ()
-eta_expansion_core t s = go t s where
-  go (Lambda lam1) (Lambda lam2) = return ()
+{- | Throw true if 't' and 's' are definitionally equal because they are applications of the form
+    '(f a_1 ... a_n)' and '(g b_1 ... b_n)', where 'f' and 'g' are definitionally equal, and
+    'a_i' and 'b_i' are also definitionally equal for every 1 <= i <= n.
+    Throw 'False' otherwise.
+-}
+is_def_eq_app :: Expression -> Expression -> DefEqMethod ()
+is_def_eq_app t s =
+  deq_try_seq [is_def_eq_main (get_operator t) (get_operator s),
+               throwE (genericLength (get_app_args t) == genericLength (get_app_args s)),
+               mapM_ (uncurry is_def_eq_main) (zip (get_app_args t) (get_app_args s))]
+  
+is_eq_eta_expansion :: Expression -> Expression -> DefEqMethod ()
+is_eq_eta_expansion t s = deq_any_of [is_eq_eta_expansion_core t s, is_eq_eta_expansion_core s t]
+
+-- | Try to solve (fun (x : A), B) =?= s by trying eta-expansion on s
+is_eq_eta_expansion_core :: Expression -> Expression -> DefEqMethod ()
+is_eq_eta_expansion_core t s = go t s where
+  go (Lambda lam1) (Lambda lam2) = throwE False
   go (Lambda lam1) s = do
     s_ty_n <- lift $ infer_type s >>= whnf
     case s_ty_n of
       Pi pi -> let new_s = mk_lambda (binding_name pi) (binding_domain pi) (mk_app s (mk_var 0)) (binding_info pi) in do
-        is_eq <- lift $ is_def_eq t new_s
-        if is_eq then throwE True else return ()
-      _ -> return ()
-  go _ _ = return ()
-
+        deq_commit_to (is_def_eq_main t new_s)
+      _ -> throwE False
+  go _ _ = throwE False
+  
 is_prop :: Expression -> TCMethod Bool
 is_prop e = do
   e_ty <- infer_type e
@@ -421,13 +441,16 @@ quick_is_def_eq t s = case (t,s) of
   (Sort sort1, Sort sort2) -> throwE (level_equiv (sort_level sort1) (sort_level sort2))
   _ -> return ()
 
+-- | Given lambda/Pi expressions 't' and 's', return true iff 't' is def eq to 's', which holds iff 'domain(t)' is definitionally equal to 'domain(s)' and 'body(t)' is definitionally equal to 'body(s)'
+is_def_eq_binding :: BindingData -> BindingData -> DefEqMethod ()
 is_def_eq_binding bind1 bind2 = do
-  deq_true_as_continue (is_def_eq_main (binding_domain bind1) (binding_domain bind2))
-  next_id <- lift gensym
-  local <- return $ mk_local (mk_system_name next_id) (binding_name bind1) (binding_domain bind1) (binding_info bind1)
-  is_def_eq_main (instantiate (binding_body bind1) local) (instantiate (binding_body bind2) local)
+  deq_try_seq  [(is_def_eq_main (binding_domain bind1) (binding_domain bind2)),
+                do next_id <- lift gensym
+                   local <- return $ mk_local (mk_system_name next_id) (binding_name bind1) (binding_domain bind1) (binding_info bind1)
+                   is_def_eq_main (instantiate (binding_body bind1) local) (instantiate (binding_body bind2) local)]
 
 
+is_def_eq_levels :: [Level] -> [Level] -> Bool
 is_def_eq_levels ls1 ls2 = all (True==) (map (uncurry level_equiv) (zip ls1 ls2))
                
 
