@@ -453,9 +453,8 @@ is_def_eq_binding bind1 bind2 = do
 
 
 is_def_eq_levels :: [Level] -> [Level] -> Bool
-is_def_eq_levels ls1 ls2 = all (True==) (map (uncurry level_equiv) (zip ls1 ls2))
-               
-
+is_def_eq_levels ls1 ls2 = genericLength ls1 == genericLength ls2 &&
+                           all (True==) (map (uncurry level_equiv) (zip ls1 ls2))
 
 -----
 gensym :: StateT Integer (ReaderT TypeChecker (Either TypeError)) Integer
