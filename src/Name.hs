@@ -29,13 +29,13 @@ showName (AppendInteger n i) = showName n ++ "." ++ show(i)
 instance Show Name where show n = showName n
 
 -- TODO guarantee unique
+-- TODO these are silly, need redesign
 system_prefix = AppendString Anonymous "#_system"
 user_prefix = AppendString Anonymous "#_user"
 
 mk_system_name i = AppendInteger system_prefix i
-mk_name s = AppendString user_prefix s
+mk_special_name n = AppendString system_prefix n
 
-name_append_integer n i = AppendInteger n i
-name_append_string n s = AppendString n s
-
-
+-- note reverse order
+mk_name [n] = AppendString Anonymous n
+mk_name (n:ns) = AppendString (mk_name ns) n

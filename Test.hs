@@ -48,7 +48,7 @@ assert msg b = if b then return () else do
 -- Levels
   
 test_levels =
-  let zero = mk_zero
+  let zero = mk_level_zero
       one = mk_succ zero
       two = mk_succ one
       p1 = mk_level_param (mk_name "p1")
@@ -149,7 +149,7 @@ my_add_to_env :: CertifiedDeclaration -> RunnerMethod ()
 my_add_to_env cdecl = modify (flip env_add cdecl)
 
 -- nat
-nat_assumption = mk_constant_assumption (mk_name "nat") [] (mk_sort (mk_succ mk_zero))
+nat_assumption = mk_constant_assumption (mk_name "nat") [] (mk_sort (mk_succ mk_level_zero))
 nat_expr = mk_constant (mk_name "nat") []
 
 zero_assumption = mk_constant_assumption (mk_name "zero") [] nat_expr
@@ -181,7 +181,7 @@ prop_type_is_type1 :: RunnerMethod Expression
 prop_type_is_type1 = my_infer_type mk_Prop
 
 type1_type_is_type2 :: RunnerMethod Expression
-type1_type_is_type2 = my_infer_type (mk_sort (mk_succ mk_zero))
+type1_type_is_type2 = my_infer_type (mk_sort (mk_succ mk_level_zero))
 
 nat_to_nat_type_is_type1 :: RunnerMethod Expression
 nat_to_nat_type_is_type1 = do
@@ -193,7 +193,7 @@ test_basic_typechecking = do
   putStrLn "test_basic_typechecking"
   assertEqual (evalStateT three_example empty_environment) (Right nat_expr)
   assertEqual (evalStateT prop_type_is_type1 empty_environment) (Right mk_Type)
-  assertEqual (evalStateT type1_type_is_type2 empty_environment) (Right (mk_sort . mk_succ . mk_succ $ mk_zero))
+  assertEqual (evalStateT type1_type_is_type2 empty_environment) (Right (mk_sort . mk_succ . mk_succ $ mk_level_zero))
   assertEqual (evalStateT nat_to_nat_type_is_type1 empty_environment) (Right mk_Type)
                        
 main = test_levels >> test_exprs >> test_instantiate >> test_free_vars >> test_basic_typechecking

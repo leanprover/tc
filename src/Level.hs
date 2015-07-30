@@ -21,10 +21,13 @@ module Level where
 import Control.Monad
 import Name
 
-import Data.List (elemIndex,sortBy)
+import Data.List (elemIndex,sortBy,genericLength)
+
+import qualified Data.Set as Set
+import Data.Set (Set)
 
 newtype SuccData = SuccData { succ_of :: Level } deriving (Eq,Show)
-data MaxCoreData = MaxCoreData { is_imax :: Bool, level1 :: Level, level2 :: Level } deriving (Eq,Show)
+data MaxCoreData = MaxCoreData { is_imax :: Bool, max_lhs :: Level, max_rhs :: Level } deriving (Eq,Show)
 newtype LevelParamData = LevelParamData { param_name :: Name } deriving (Eq,Show)
 newtype GlobalLevelData = GlobalLevelData { global_name :: Name } deriving (Eq,Show)
 
@@ -44,20 +47,32 @@ get_undef_param :: Level -> [Name] -> Maybe Name
 get_undef_param l ns = case l of
   Zero -> Nothing
   Succ succ -> get_undef_param (succ_of succ) ns
-  Max max -> get_undef_param (level1 max) ns `mplus` get_undef_param (level2 max) ns
-  IMax imax -> get_undef_param (level1 imax) ns `mplus` get_undef_param (level2 imax) ns
+  Max max -> get_undef_param (max_lhs max) ns `mplus` get_undef_param (max_rhs max) ns
+  IMax imax -> get_undef_param (max_lhs imax) ns `mplus` get_undef_param (max_rhs imax) ns
   LevelParam n -> if elem n ns then Nothing else Just n
   GlobalLevel n -> Nothing
 
-get_undef_global :: Level -> [Name] -> Maybe Name
+get_undef_global :: Level -> Set Name -> Maybe Name
 get_undef_global l ns = case l of
   Zero -> Nothing
   Succ succ -> get_undef_global (succ_of succ) ns
-  Max max -> get_undef_global (level1 max) ns `mplus` get_undef_global (level2 max) ns
-  IMax imax -> get_undef_global (level1 imax) ns `mplus` get_undef_global (level2 imax) ns
+  Max max -> get_undef_global (max_lhs max) ns `mplus` get_undef_global (max_rhs max) ns
+  IMax imax -> get_undef_global (max_lhs imax) ns `mplus` get_undef_global (max_rhs imax) ns
   LevelParam n -> Nothing
-  GlobalLevel n -> if elem n ns then Nothing else Just n
+  GlobalLevel n -> if Set.member n ns then Nothing else Just n
 
+{- |
+A level is explicit if it is of the form 'Succ^k Zero' for some 'k'.
+
+>>> is_explicit mk_level_zero
+True  
+
+>>> is_explicit (mk_succ (mk_succ mk_level_zero))
+True
+
+>>> is_explicit (mk_max (mk_level_param (mk_name ["l"])) mk_level_zero)
+False
+-}
 is_explicit l = case l of
   Zero -> True
   Succ succ -> is_explicit (succ_of succ)
@@ -74,6 +89,18 @@ get_depth l = case l of
   LevelParam n -> 0
   GlobalLevel n -> 0
 
+{- |
+Factors out outermost sequence of 'mk_succ' applications.
+
+>>> to_offset mk_level_zero
+(Zero,0)
+
+>>> to_offset (mk_succ mk_level_zero)
+(Zero,1)
+
+>>> to_offset (mk_succ (mk_level_param (mk_name ["l"])))
+(LevelParam .l,1)
+-}
 to_offset l = case l of
   Succ succ -> (\(p,q) -> (p,q+1)) $ to_offset (succ_of succ)
   otherwise -> (l,0)
@@ -82,8 +109,11 @@ is_zero l = case l of
   Zero -> True
   _ -> False
 
-mk_zero = Zero
+mk_level_zero = Zero
 mk_succ l = Succ (SuccData l)
+
+mk_level_one = mk_succ mk_level_zero
+mk_level_two = mk_succ $ mk_succ mk_level_zero
 
 mk_iterated_succ l k
   | k == 0 = l
@@ -96,10 +126,10 @@ mk_max l1 l2
   | is_zero l2 = l1
   | otherwise =
     case l1 of
-      Max max | level1 max == l2 || level2 max == l2 -> l1
+      Max max | max_lhs max == l2 || max_rhs max == l2 -> l1
       otherwise ->
         case l2 of
-          Max max | level1 max == l1 || level2 max == l1 -> l2
+          Max max | max_lhs max == l1 || max_rhs max == l1 -> l2
           otherwise -> 
             let (l1',k1) = to_offset l1
                 (l2',k2) = to_offset l2
@@ -121,14 +151,14 @@ is_definitely_not_zero l = case l of
   LevelParam _ -> False
   GlobalLevel _ -> False
   Succ _ -> True
-  Max max -> is_definitely_not_zero (level1 max) || is_definitely_not_zero (level2 max)
-  IMax imax -> is_definitely_not_zero (level2 imax)  
+  Max max -> is_definitely_not_zero (max_lhs max) || is_definitely_not_zero (max_rhs max)
+  IMax imax -> is_definitely_not_zero (max_rhs imax)  
 
 has_param l = case l of
   LevelParam _ -> True
   Succ succ -> has_param (succ_of succ)
-  Max max -> has_param (level1 max) || has_param (level2 max)
-  IMax imax -> has_param (level1 imax) || has_param (level2 imax)
+  Max max -> has_param (max_lhs max) || has_param (max_rhs max)
+  IMax imax -> has_param (max_lhs imax) || has_param (max_rhs imax)
   _ -> False
 
 
@@ -196,19 +226,11 @@ normalize_level l = let p = to_offset l in case fst p of
     in
      mk_big_max lifted_args
 
-mk_big_max [] = mk_zero
+mk_big_max [] = mk_level_zero
 mk_big_max [l] = l
 mk_big_max (x:xs) = mk_max x (mk_big_max xs)
 
     
-
-
-
-
-
-
-
-
 level_equiv l1 l2 = l1 == l2 || normalize_level l1 == normalize_level l2
 
 
@@ -224,14 +246,14 @@ replace_in_level f l =
       case l of
         Zero -> l
         Succ succ -> mk_succ (replace_in_level f $ succ_of succ)
-        Max max -> mk_max (replace_in_level f $ level1 max) (replace_in_level f $ level2 max)
-        IMax imax -> mk_imax (replace_in_level f $ level1 imax) (replace_in_level f $ level2 imax)
+        Max max -> mk_max (replace_in_level f $ max_lhs max) (replace_in_level f $ max_rhs max)
+        IMax imax -> mk_imax (replace_in_level f $ max_lhs imax) (replace_in_level f $ max_rhs imax)
         LevelParam param -> l
         GlobalLevel global -> l
 
 instantiate_level_fn :: [Name] -> [Level] -> LevelReplaceFn
 instantiate_level_fn level_param_names levels level
-  | not (length level_param_names == length levels) = error "Wrong number of level params"
+  | not (genericLength level_param_names == genericLength levels) = error "Wrong number of level params"
   | not (has_param level) = Just level
 
 instantiate_level_fn level_param_names levels (LevelParam name) =
@@ -244,3 +266,27 @@ instantiate_level_fn _ _ _ = Nothing
 instantiate_level :: [Name] -> [Level] -> Level -> Level
 instantiate_level level_param_names levels level =
   replace_in_level (instantiate_level_fn level_param_names levels) level
+
+-- Order
+
+-- TODO [level_leq_core] was rushed, need to test carefully
+level_leq l1 l2 = level_leq_core (normalize_level l1) (normalize_level l2)
+level_leq_core l1 l2
+  | l1 == l2 || is_zero l1 = True
+
+level_leq_core (Max max) l2 = level_leq (max_lhs max) l2 && level_leq (max_rhs max) l2
+level_leq_core l1 (Max max) = level_leq l1 (max_lhs max) || level_leq l1 (max_rhs max)
+level_leq_core (IMax imax) l2 = level_leq (max_lhs imax) l2 && level_leq (max_rhs imax) l2
+level_leq_core l1 (IMax imax) = level_leq l1 (max_rhs imax)
+
+level_leq_core l1 l2 =
+  let (l1',k1) = to_offset l1
+      (l2',k2) = to_offset l2
+  in
+   if l1' == l2' || is_zero l1' then k1 <= k2 else
+     if k1 == k2 && k1 > 0 then level_leq l1' l2' else
+       False
+
+
+instance Ord Level where
+  (<=) = level_leq
