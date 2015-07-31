@@ -430,12 +430,15 @@ populate_C_indices_major (InductiveDecl name ty intro_rules) d_idx = do
 
 build_indices :: Expression -> Integer -> AddInductiveMethod ([LocalData],Expression)
 build_indices (Pi pi) param_num = do
-  param_const <- liftM (flip genericIndex param_num . m_param_consts) get
-  (indices,body) <- build_indices (instantiate (binding_body pi) (Local param_const)) (param_num+1)
-  num_params <- gets m_num_params
-  if param_num < num_params
+  num_params <- gets m_num_params  
+  use_param <- return $ param_num < num_params
+  local <- if use_param 
+           then liftM (flip genericIndex param_num . m_param_consts) get
+           else mk_local_for pi
+  (indices,body) <- build_indices (instantiate (binding_body pi) (Local local)) (param_num+1)
+  if use_param
     then return (indices,body)
-    else mk_local_for pi >>= (\c -> return (c : indices,body))
+    else return (local:indices,body)
 
 build_indices ty param_num = return ([],ty)
 
