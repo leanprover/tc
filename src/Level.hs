@@ -26,10 +26,11 @@ import Data.List (elemIndex,sortBy,genericLength)
 import qualified Data.Set as Set
 import Data.Set (Set)
 
-newtype SuccData = SuccData { succ_of :: Level } deriving (Eq,Show)
-data MaxCoreData = MaxCoreData { is_imax :: Bool, max_lhs :: Level, max_rhs :: Level } deriving (Eq,Show)
-newtype LevelParamData = LevelParamData { param_name :: Name } deriving (Eq,Show)
-newtype GlobalLevelData = GlobalLevelData { global_name :: Name } deriving (Eq,Show)
+import Debug.Trace
+newtype SuccData = SuccData { succ_of :: Level } deriving (Eq,Show,Ord)
+data MaxCoreData = MaxCoreData { is_imax :: Bool, max_lhs :: Level, max_rhs :: Level } deriving (Eq,Show,Ord)
+newtype LevelParamData = LevelParamData { param_name :: Name } deriving (Eq,Show,Ord)
+newtype GlobalLevelData = GlobalLevelData { global_name :: Name } deriving (Eq,Show,Ord)
 
 -- TODO inefficient
 data Level = Zero
@@ -38,8 +39,22 @@ data Level = Zero
            | IMax MaxCoreData
            | LevelParam Name
            | GlobalLevel Name
-           deriving (Eq,Show)
+           deriving (Eq,Ord)
 
+showLevel :: Level -> String
+showLevel l = case to_offset l of
+  (l,0) -> "{ " ++ showLevel_core l ++ " }"
+  (l,k) -> "{ <" ++ show k ++ "> " ++ showLevel_core l ++ " }"
+  where
+    showLevel_core :: Level -> String
+    showLevel_core l = case l of
+      Zero -> "0"
+      Max max -> "(max " ++ showLevel (max_lhs max) ++ " " ++ showLevel (max_rhs max) ++ ")"
+      IMax imax -> "(max " ++ showLevel (max_lhs imax) ++ " " ++ showLevel (max_rhs imax) ++ ")"
+      LevelParam lp -> show lp
+      GlobalLevel gl -> "!" ++ show gl
+
+instance Show Level where show e = showLevel e
 
   
 
@@ -195,8 +210,6 @@ remove_small_explicits [] = Nothing
 remove_small_explicits [l] = Just l
 remove_small_explicits (l:ls) = remove_small_explicits ls
 
--- TODO we need to sort and simplify MAX
--- Right now we will fail when two identical universes are syntatically different
 normalize_level l = let p = to_offset l in case fst p of
   Zero -> l
   LevelParam _ -> l
@@ -207,7 +220,7 @@ normalize_level l = let p = to_offset l in case fst p of
     in
      if l1 /= l1_n || l2 /= l2_n then mk_iterated_succ (mk_imax l1_n l2_n) (snd p) else l
   Max max ->
-    let max_args = (sortBy level_norm_cmp) . (map normalize_level) $ collect_max_args (Max max)
+    let max_args = (sortBy level_norm_cmp) . concat . (map (collect_max_args . normalize_level)) $ collect_max_args (Max max)
         explicit = remove_small_explicits $ filter is_explicit max_args
         -- TODO confirm that I don't need to check that the offsets are ordered here (Leo does for some reason)        
         non_explicits = let rest = filter (not . is_explicit) max_args
@@ -275,7 +288,9 @@ level_leq_core l1 l2
   | l1 == l2 || is_zero l1 = True
 
 level_leq_core (Max max) l2 = level_leq (max_lhs max) l2 && level_leq (max_rhs max) l2
-level_leq_core l1 (Max max) = level_leq l1 (max_lhs max) || level_leq l1 (max_rhs max)
+level_leq_core l1 (Max max)
+  | level_leq l1 (max_lhs max) || level_leq l1 (max_rhs max) = True
+                                                               
 level_leq_core (IMax imax) l2 = level_leq (max_lhs imax) l2 && level_leq (max_rhs imax) l2
 level_leq_core l1 (IMax imax) = level_leq l1 (max_rhs imax)
 
@@ -288,5 +303,5 @@ level_leq_core l1 l2 =
        False
 
 
-instance Ord Level where
-  (<=) = level_leq
+--instance Ord Level where
+--  (<=) = level_leq

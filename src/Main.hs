@@ -34,11 +34,13 @@ data Context = Context {
   name_map :: Map Integer Name,
   level_map :: Map Integer Level,
   expr_map :: Map Integer Expression,
-  global_env :: Environment
+  global_env :: Environment,
+  def_id :: Integer,
+  ind_id :: Integer
   }
 
 
-initial_context = Context (Map.insert 0 Anonymous Map.empty) (Map.insert 0 mk_level_zero Map.empty) Map.empty empty_environment
+initial_context = Context (Map.insert 0 Anonymous Map.empty) (Map.insert 0 mk_level_zero Map.empty) Map.empty empty_environment 0 0
 
 interpret :: [Statement] -> ExceptT KernelError (State Context) Environment
 interpret [] = gets global_env
@@ -118,9 +120,11 @@ interpret_statement statement =
     StatementBIND num_params _ level_name_idxs idecls ->
       do me <- gets expr_map
          mn <- gets name_map
+         did <- gets ind_id
+         modify (\s -> s { ind_id = did + 1 })
          let level_names = map (mn Map.!) level_name_idxs
              inductive_decls = map (instantiate_idecl mn me) idecls in do
-           trace ("BIND: " ++ (show (map (\(InductiveDecl name _ _) -> name) inductive_decls))) (return ())
+           trace ("BIND(" ++ show did ++ "): " ++ (show (map (\(InductiveDecl name _ _) -> name) inductive_decls))) (return ())
            old_env <- gets global_env
            new_env <- register_inductive old_env level_names num_params inductive_decls
            modify (\c -> c { global_env = new_env })
@@ -136,12 +140,14 @@ interpret_statement statement =
       do mn <- gets name_map
          me <- gets expr_map
          old_env <- gets global_env
+         did <- gets def_id
+         modify (\s -> s { def_id = did + 1 })         
          let name = mn Map.! name_idx
              level_names = map (mn Map.!) level_name_idxs
              def_type = me Map.! type_idx
              def_value = me Map.! value_idx
              decl = mk_definition old_env name level_names def_type def_value in do
-           trace ("DEF: " ++ show name) (return ())
+           trace ("DEF(" ++ show did ++ "): " ++ show name) (return ())
            case TypeChecker.check old_env decl of
              Left err -> throwE $ TypeError err
              Right cdecl -> modify (\c -> c { global_env = env_add old_env cdecl })

@@ -51,7 +51,7 @@ data InductiveDeclError = NoInductiveTypeDecls
                         | ParamsOfInductiveTypesMustMatch
                         | NumParamsMismatchInInductiveDecl Integer Integer
                         | ArgDoesNotMatchInductiveParameters Integer Name
-                        | UniLevelOfArgTooBig Integer Name
+                        | UniLevelOfArgTooBig Integer Name Level Level
                         | OneInPropAllInProp 
                         | NonRecArgAfterRecArg Integer Name
                         | InvalidRecArg Integer Name
@@ -252,8 +252,8 @@ check_intro_rule_core d_idx param_num found_rec name ty =
                              2. m_env is impredicative and inductive datatype is at level 0 -}
                           it_level <- liftM (flip genericIndex d_idx . m_it_levels) get
                           env <- gets m_env
-                          ind_assert (sort_level sort <= it_level || (is_zero it_level && is_impredicative env))
-                            (UniLevelOfArgTooBig param_num name)
+                          ind_assert (level_leq (sort_level sort) it_level || (is_zero it_level && is_impredicative env))
+                            (UniLevelOfArgTooBig param_num name (normalize_level $ sort_level sort) (normalize_level it_level))
                           domain_ty <- whnf (binding_domain pi)
                           check_positivity domain_ty name param_num
                           is_rec <- is_rec_argument domain_ty

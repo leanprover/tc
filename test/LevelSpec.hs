@@ -102,6 +102,39 @@ levels_misc_spec =
     it "mk_imax should call mk_max" $ do
       level_equiv (mk_imax (mk_succ p1) (mk_succ p2)) (mk_imax (mk_succ p2) (mk_succ p1)) `shouldBe` True
 
+normalize_spec1 :: Spec
+normalize_spec1 =
+  let u = mk_global_univ (mk_name ["u"])
+      v = mk_global_univ (mk_name ["v"])
+      z = mk_level_zero in do
+    describe "normalize1" $ do
+      it "max should ignore zeros" $ do
+        (normalize_level $ mk_max z (mk_max u (mk_succ z)))
+          `shouldBe`
+          (mk_max (mk_succ z) u)
+      it "basic1" $ do
+        (normalize_level $ mk_max (mk_max (mk_succ v) u) (mk_max v (mk_succ u)))
+          `shouldBe`
+          (mk_max (mk_succ u) (mk_succ v))
+      it "basic" $ do
+        (normalize_level $ mk_max (mk_succ mk_level_zero) u) `shouldBe` (mk_max (mk_succ mk_level_zero) u)
+      it "basic2" $ do
+        (normalize_level $ mk_max (mk_succ (mk_max (mk_succ v) u)) (mk_max v (mk_succ (mk_succ u))))
+          `shouldBe`
+          (mk_max (mk_succ (mk_succ u)) (mk_succ (mk_succ v)))
+        
+level_leq_spec1 :: Spec
+level_leq_spec1 = do
+  let u = mk_level_param (mk_name ["u"]) in
+    describe "level_leq1" $ do
+      it "should work with max on the rhs" $ do
+        level_leq u (mk_max (mk_succ mk_level_zero) u) `shouldBe` True
+     
+
+{-assert(max(succ(max(succ(v), u)), max(v, succ(succ(u)))):norm() == max(succ(succ(u)), succ(succ(v))))
+assert(imax(succ(succ(max(u, u))), v):norm() == imax(succ(succ(u)), v))
+assert(max(u, max(succ(succ(z)), max(u, succ(z)))):norm() == max(succ(succ(z)), u))
+-}
 
 spec :: Spec
 spec = do
@@ -109,3 +142,5 @@ spec = do
   replace_in_level_spec
   instantiate_level_spec
   levels_misc_spec
+  normalize_spec1
+  level_leq_spec1

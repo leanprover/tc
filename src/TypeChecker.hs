@@ -73,6 +73,10 @@ tc_eval env level_names next_id tc_fn =
   let (x,tc) = runState (runExceptT tc_fn) (mk_type_checker env level_names next_id) in
   fmap (\val -> (val,tc_next_id tc)) x
 
+tc_run :: Environment -> [Name] -> Integer -> TCMethod a -> Either TypeError a
+tc_run env level_names next_id tc_fn = evalState (runExceptT tc_fn) (mk_type_checker env level_names next_id)
+
+
 check_main :: Declaration -> TCMethod CertifiedDeclaration
 check_main d = do
   tc <- get
