@@ -4,7 +4,7 @@ import Data.Char
 import Expression
 }
 
-%name parseExportFile
+%name parseStatement
 %tokentype { Token }
 %error { parseError }
 
@@ -45,26 +45,23 @@ BAR { TokenBAR }
 NL { TokenNL }
 %%
 
-S : S Statement { $1 ++ [$2] }
-  | {- empty -} { [] }
-
-Statement : INT NS INT STR NL { StatementNS $1 $3 $4 } 
-          | INT NI INT INT NL { StatementNI $1 $3 $4 }
-          | INT US INT NL { StatementUS $1 $3 }
-          | INT UM INT INT NL { StatementUM $1 $3 $4 }
-          | INT UIM INT INT NL { StatementUIM $1 $3 $4 }
-          | INT UP INT NL { StatementUP $1 $3 }
-          | INT UG INT NL { StatementUG $1 $3 }
-          | INT EV INT NL { StatementEV $1 $3 }
-          | INT ES INT NL { StatementES $1 $3 }
-          | INT EC INT IntList NL { StatementEC $1 $3 $4 }
-          | INT EA INT INT NL { StatementEA $1 $3 $4 }
-          | INT EL Info INT INT INT NL { StatementEL $1 $3 $4 $5 $6 }
-          | INT EP Info INT INT INT NL { StatementEP $1 $3 $4 $5 $6 }
-          | UNI INT NL { StatementUNI $2 }
-          | DEF INT IntList BAR INT INT NL { StatementDEF $2 $3 $5 $6 }
-          | AX INT IntList BAR INT NL { StatementAX $2 $3 $5 }
-          | BIND INT INT IntList NL Inds EIND NL { StatementBIND $2 $3 $4 $6 }
+S : INT NS INT STR { StatementNS $1 $3 $4 } 
+  | INT NI INT INT { StatementNI $1 $3 $4 }
+  | INT US INT { StatementUS $1 $3 }
+  | INT UM INT INT { StatementUM $1 $3 $4 }
+  | INT UIM INT INT { StatementUIM $1 $3 $4 }
+  | INT UP INT { StatementUP $1 $3 }
+  | INT UG INT { StatementUG $1 $3 }
+  | INT EV INT { StatementEV $1 $3 }
+  | INT ES INT { StatementES $1 $3 }
+  | INT EC INT IntList { StatementEC $1 $3 $4 }
+  | INT EA INT INT { StatementEA $1 $3 $4 }
+  | INT EL Info INT INT INT { StatementEL $1 $3 $4 $5 $6 }
+  | INT EP Info INT INT INT { StatementEP $1 $3 $4 $5 $6 }
+  | UNI INT { StatementUNI $2 }
+  | DEF INT IntList BAR INT INT { StatementDEF $2 $3 $5 $6 }
+  | AX INT IntList BAR INT { StatementAX $2 $3 $5 }
+  | BIND INT INT IntList NL Inds EIND NL { StatementBIND $2 $3 $4 $6 }
 
 Info : BD { BinderDefault }
      | BI { BinderImplicit }
@@ -118,53 +115,53 @@ data IIntro = IIntro Integer Integer deriving (Show)
 parseError :: [Token] -> a
 parseError tokens = error $ "ERROR: " ++ show tokens
 
-lexExportFile :: String -> [Token]
-lexExportFile [] = []
-lexExportFile (c:cs) 
-    | c == '\n' = TokenNL : lexExportFile cs
-    | c == '|' = TokenBAR : lexExportFile cs
-    | isSpace c = lexExportFile cs
+lexStatement :: String -> [Token]
+lexStatement [] = []
+lexStatement (c:cs) 
+    | c == '\n' = TokenNL : lexStatement cs
+    | c == '|' = TokenBAR : lexStatement cs
+    | isSpace c = lexStatement cs
     | isDigit c = lexInt (c:cs)
     | otherwise = lexWord (c:cs)
 
-lexInt cs = TokenInt (read num) : lexExportFile rest
+lexInt cs = TokenInt (read num) : lexStatement rest
       where (num,rest) = span isDigit cs
 
 lexWord cs = case span (not . isSpace) cs of
-    ("#NS",rest) -> TokenNS : lexExportFile rest
-    ("#NI",rest) -> TokenNI : lexExportFile rest
+    ("#NS",rest) -> TokenNS : lexStatement rest
+    ("#NI",rest) -> TokenNI : lexStatement rest
 
-    ("#US",rest) -> TokenUS : lexExportFile rest
-    ("#UM",rest) -> TokenUM : lexExportFile rest
-    ("#UIM",rest) -> TokenUIM : lexExportFile rest
-    ("#UP",rest) -> TokenUP : lexExportFile rest
-    ("#UG",rest) -> TokenUG : lexExportFile rest
+    ("#US",rest) -> TokenUS : lexStatement rest
+    ("#UM",rest) -> TokenUM : lexStatement rest
+    ("#UIM",rest) -> TokenUIM : lexStatement rest
+    ("#UP",rest) -> TokenUP : lexStatement rest
+    ("#UG",rest) -> TokenUG : lexStatement rest
 
-    ("#EV",rest) -> TokenEV : lexExportFile rest
-    ("#ES",rest) -> TokenES : lexExportFile rest
-    ("#EC",rest) -> TokenEC : lexExportFile rest
-    ("#EA",rest) -> TokenEA : lexExportFile rest
-    ("#EL",rest) -> TokenEL : lexExportFile rest
-    ("#EP",rest) -> TokenEP : lexExportFile rest
+    ("#EV",rest) -> TokenEV : lexStatement rest
+    ("#ES",rest) -> TokenES : lexStatement rest
+    ("#EC",rest) -> TokenEC : lexStatement rest
+    ("#EA",rest) -> TokenEA : lexStatement rest
+    ("#EL",rest) -> TokenEL : lexStatement rest
+    ("#EP",rest) -> TokenEP : lexStatement rest
 
-    ("#BD",rest) -> TokenBD : lexExportFile rest
-    ("#BI",rest) -> TokenBI : lexExportFile rest
-    ("#BS",rest) -> TokenBS : lexExportFile rest
-    ("#BC",rest) -> TokenBC : lexExportFile rest
+    ("#BD",rest) -> TokenBD : lexStatement rest
+    ("#BI",rest) -> TokenBI : lexStatement rest
+    ("#BS",rest) -> TokenBS : lexStatement rest
+    ("#BC",rest) -> TokenBC : lexStatement rest
 
-    ("#UNI",rest) -> TokenUNI : lexExportFile rest
-    ("#DEF",rest) -> TokenDEF : lexExportFile rest
-    ("#AX",rest) -> TokenAX : lexExportFile rest
+    ("#UNI",rest) -> TokenUNI : lexStatement rest
+    ("#DEF",rest) -> TokenDEF : lexStatement rest
+    ("#AX",rest) -> TokenAX : lexStatement rest
     
-    ("#BIND",rest) -> TokenBIND : lexExportFile rest
-    ("#IND",rest) -> TokenIND : lexExportFile rest
-    ("#INTRO",rest) -> TokenINTRO : lexExportFile rest
-    ("#EIND",rest) -> TokenEIND : lexExportFile rest
-    (str,rest) -> (TokenString str) : lexExportFile rest
+    ("#BIND",rest) -> TokenBIND : lexStatement rest
+    ("#IND",rest) -> TokenIND : lexStatement rest
+    ("#INTRO",rest) -> TokenINTRO : lexStatement rest
+    ("#EIND",rest) -> TokenEIND : lexStatement rest
+    (str,rest) -> (TokenString str) : lexStatement rest
     
 --main = do
 --  args <- getArgs
 --  content <- readFile (args !! 0)
---  print . parseExportFile . lexExportFile $ content
+--  print . parseExportFile . lexStatement $ content
 
 }

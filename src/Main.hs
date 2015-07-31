@@ -21,6 +21,7 @@ import Data.Map (Map)
 import qualified Data.Set as Set
 import Data.Set (Set)
 
+import Data.List (findIndex)
 import Debug.Trace
 
 data ExportRepeatError = RepeatedName | RepeatedLevel | RepeatedExpression | RepeatedUNI deriving (Show)
@@ -172,10 +173,26 @@ register_inductive env level_param_names num_params idecls =
 
     
 
+isBIND x = case words x of
+  ("#BIND" : _) -> True
+  _ -> False
+
+isEIND x = case words x of
+  ("#EIND" : _) -> True
+  _ -> False
+
+splitAtStatements s = splitLines (lines s) where
+  splitLines [] = []
+  splitLines (x:xs)
+    | isBIND x = case findIndex isEIND xs of
+      Just k -> (unlines $ x : (take (k+1) xs)) : splitLines (drop (k+1) xs)
+    | otherwise = x : splitLines xs
+
 main = do
   args <- getArgs
   content <- readFile (args !! 0)
-  print $ case evalState (runExceptT $ interpret . parseExportFile . lexExportFile $ content) initial_context of
+--  print $ splitAtStatements content
+  print $ case evalState (runExceptT $ interpret . (map (parseStatement . lexStatement)) . splitAtStatements $ content) initial_context of
     Left err -> show err
     Right _ -> "Congratulations!"
 
