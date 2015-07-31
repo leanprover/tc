@@ -632,30 +632,34 @@ build_e_app (rec_arg:rest) = do
 
 check_type e level_names = do
   env <- gets m_env
-  case TypeChecker.tc_eval env level_names (TypeChecker.infer_type e) of
+  next_id <- gets m_next_id
+  case TypeChecker.tc_eval env level_names next_id (TypeChecker.infer_type e) of
     Left tc_err -> throwE $ TypeCheckError tc_err "check_type"
-    Right e -> return e
+    Right (e,next) -> modify (\tc -> tc { m_next_id = next }) >> return e
 
 ensure_sort e = do
   env <- gets m_env
   level_names <- gets m_level_names
-  case TypeChecker.tc_eval env level_names (TypeChecker.ensure_sort e) of
+  next_id <- gets m_next_id
+  case TypeChecker.tc_eval env level_names next_id (TypeChecker.ensure_sort e) of
     Left tc_err -> throwE $ TypeCheckError tc_err "ensure_sort"
-    Right sort -> return sort
+    Right (sort,next) -> modify (\tc -> tc { m_next_id = next }) >> return sort
 
 ensure_type e = do
   env <- gets m_env
   level_names <- gets m_level_names
-  case TypeChecker.tc_eval env level_names (TypeChecker.ensure_type e) of
+  next_id <- gets m_next_id
+  case TypeChecker.tc_eval env level_names next_id (TypeChecker.ensure_type e) of
     Left tc_err -> throwE $ TypeCheckError tc_err "ensure_type"
-    Right sort -> return sort
+    Right (sort,next) -> modify (\tc -> tc { m_next_id = next }) >> return sort
 
 is_def_eq e1 e2 = do
   env <- gets m_env
-  level_names <- gets m_level_names  
-  case TypeChecker.tc_eval env level_names (TypeChecker.is_def_eq e1 e2) of
+  level_names <- gets m_level_names
+  next_id <- gets m_next_id
+  case TypeChecker.tc_eval env level_names next_id (TypeChecker.is_def_eq e1 e2) of
     Left tc_err -> throwE $ TypeCheckError tc_err "is_def_eq"
-    Right b -> return b
+    Right (b,next) -> modify (\tc -> tc { m_next_id = next }) >> return b
 
 certify_ideclaration :: InductiveDecl -> AddInductiveMethod CertifiedDeclaration
 certify_ideclaration (InductiveDecl name ty intro_rules) = do
@@ -665,17 +669,20 @@ certify_ideclaration (InductiveDecl name ty intro_rules) = do
 certify_declaration :: Name -> [Name] -> Expression -> AddInductiveMethod CertifiedDeclaration
 certify_declaration name level_names ty = do
   env <- gets m_env
+  next_id <- gets m_next_id
   let decl = mk_axiom name level_names ty in
-    case TypeChecker.tc_eval env level_names (TypeChecker.check_main decl) of
+    case TypeChecker.tc_eval env level_names next_id (TypeChecker.check_main decl) of
       Left tc_err -> throwE $ TypeCheckError tc_err "certify_declaration"
-      Right cdecl -> return cdecl
+      Right (cdecl,next) -> modify (\tc -> tc { m_next_id = next }) >> return cdecl
 
 whnf e = do
   env <- gets m_env
-  level_names <- gets m_level_names  
-  case TypeChecker.tc_eval env level_names (TypeChecker.whnf e) of
+  level_names <- gets m_level_names
+  next_id <- gets m_next_id
+  case TypeChecker.tc_eval env level_names next_id (TypeChecker.whnf e) of
     Left tc_err -> throwE $ TypeCheckError tc_err "whnf"
-    Right e -> return e
+    Right (e,next) -> modify (\tc -> tc { m_next_id = next }) >> return e
+
 
 -- TODO whnf that takes env and level names as arguments
 

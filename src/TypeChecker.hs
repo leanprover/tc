@@ -61,15 +61,17 @@ data TypeChecker = TypeChecker {
   tc_equiv_manager :: EM.EquivManager
   }
 
-mk_type_checker env level_names = TypeChecker env level_names 0 EM.empty_equiv_manager
+mk_type_checker env level_names next_id = TypeChecker env level_names next_id EM.empty_equiv_manager
 
 type TCMethod = ExceptT TypeError (State TypeChecker)
 
 check :: Environment -> Declaration -> Either TypeError CertifiedDeclaration
-check env d = tc_eval env (decl_level_names d) (check_main d)
+check env d = fmap fst $ tc_eval env (decl_level_names d) 0 (check_main d)
 
-tc_eval :: Environment -> [Name] -> TCMethod a -> Either TypeError a
-tc_eval env level_names tc_fn = evalState (runExceptT tc_fn) (mk_type_checker env level_names)
+tc_eval :: Environment -> [Name] -> Integer -> TCMethod a -> Either TypeError (a,Integer)
+tc_eval env level_names next_id tc_fn =
+  let (x,tc) = runState (runExceptT tc_fn) (mk_type_checker env level_names next_id) in
+  fmap (\val -> (val,tc_next_id tc)) x
 
 check_main :: Declaration -> TCMethod CertifiedDeclaration
 check_main d = do
