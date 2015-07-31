@@ -629,28 +629,28 @@ build_e_app (rec_arg:rest) = do
 
 check_type e level_names = do
   env <- gets m_env
-  case TypeChecker.tc_run env level_names 0 (TypeChecker.infer_type e) of
+  case TypeChecker.tc_eval env level_names (TypeChecker.infer_type e) of
     Left tc_err -> throwE $ TypeCheckError tc_err "check_type"
     Right e -> return e
 
 ensure_sort e = do
   env <- gets m_env
   level_names <- gets m_level_names
-  case TypeChecker.tc_run env level_names 0 (TypeChecker.ensure_sort e) of
+  case TypeChecker.tc_eval env level_names (TypeChecker.ensure_sort e) of
     Left tc_err -> throwE $ TypeCheckError tc_err "ensure_sort"
     Right sort -> return sort
 
 ensure_type e = do
   env <- gets m_env
   level_names <- gets m_level_names
-  case TypeChecker.tc_run env level_names 0 (TypeChecker.ensure_type e) of
+  case TypeChecker.tc_eval env level_names (TypeChecker.ensure_type e) of
     Left tc_err -> throwE $ TypeCheckError tc_err "ensure_type"
     Right sort -> return sort
 
 is_def_eq e1 e2 = do
   env <- gets m_env
   level_names <- gets m_level_names  
-  case TypeChecker.tc_run env level_names 0 (TypeChecker.is_def_eq e1 e2) of
+  case TypeChecker.tc_eval env level_names (TypeChecker.is_def_eq e1 e2) of
     Left tc_err -> throwE $ TypeCheckError tc_err "is_def_eq"
     Right b -> return b
 
@@ -663,14 +663,14 @@ certify_declaration :: Name -> [Name] -> Expression -> AddInductiveMethod Certif
 certify_declaration name level_names ty = do
   env <- gets m_env
   let decl = mk_axiom name level_names ty in
-    case TypeChecker.tc_run env level_names 0 (TypeChecker.check_main decl) of
+    case TypeChecker.tc_eval env level_names (TypeChecker.check_main decl) of
       Left tc_err -> throwE $ TypeCheckError tc_err "certify_declaration"
       Right cdecl -> return cdecl
 
 whnf e = do
   env <- gets m_env
   level_names <- gets m_level_names  
-  case TypeChecker.tc_run env level_names 0 (TypeChecker.whnf e) of
+  case TypeChecker.tc_eval env level_names (TypeChecker.whnf e) of
     Left tc_err -> throwE $ TypeCheckError tc_err "whnf"
     Right e -> return e
 

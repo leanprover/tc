@@ -27,36 +27,36 @@ import qualified Data.Maybe as Maybe
 import Data.List (findIndex,genericTake,genericLength,genericIndex)
 import Debug.Trace
 
-data BinderInfo = BinderDefault | BinderImplicit | BinderStrict | BinderClass deriving (Eq,Show)
+data BinderInfo = BinderDefault | BinderImplicit | BinderStrict | BinderClass deriving (Eq,Show,Ord)
 data ExprCache = ExprCache { cache_has_local :: Bool,
                              cache_has_param_univ :: Bool,
                              cache_weight :: Integer,
-                             cache_free_var_range :: Integer } deriving (Eq,Show)
+                             cache_free_var_range :: Integer } deriving (Eq,Show,Ord)
 
-data VarData = VarData { var_idx :: Integer } deriving (Eq,Show)
+data VarData = VarData { var_idx :: Integer } deriving (Eq,Show,Ord)
 
 data LocalData = LocalData { local_name :: Name ,
                              local_pp_name :: Name,
                              local_type :: Expression,
                              local_info :: BinderInfo,
-                             local_cache :: ExprCache } deriving (Eq)
+                             local_cache :: ExprCache } deriving (Eq,Ord)
 
 showLocal local = "(Local: <" ++ show (local_name local) ++ "> " ++ show (local_type local) ++ ")"
 instance Show LocalData where show e = showLocal e
 
 
-data SortData = SortData { sort_level :: Level } deriving (Eq,Show)
+data SortData = SortData { sort_level :: Level } deriving (Eq,Show,Ord)
 
-data ConstantData = ConstantData { const_name :: Name , const_levels :: [Level] } deriving (Eq,Show)
+data ConstantData = ConstantData { const_name :: Name , const_levels :: [Level] } deriving (Eq,Show,Ord)
 
-data AppData = AppData { app_fn :: Expression, app_arg :: Expression, app_cache :: ExprCache  } deriving (Eq,Show)
+data AppData = AppData { app_fn :: Expression, app_arg :: Expression, app_cache :: ExprCache  } deriving (Eq,Show,Ord)
 
 data BindingData = BindingData { is_pi :: Bool,
                                  binding_name :: Name,
                                  binding_domain :: Expression,
                                  binding_body :: Expression,
                                  binding_info :: BinderInfo,
-                                 binding_cache :: ExprCache } deriving (Eq,Show)
+                                 binding_cache :: ExprCache } deriving (Eq,Show,Ord)
 
 data Expression = Var VarData
                 | Local LocalData
@@ -65,7 +65,7 @@ data Expression = Var VarData
                 | Lambda BindingData 
                 | Pi BindingData 
                 | App AppData
-                deriving (Eq)
+                deriving (Eq,Ord)
 
 showExpression :: Expression -> String
 showExpression e = case e of
