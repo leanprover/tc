@@ -20,7 +20,7 @@ executable leantc
   main-is:             Main.hs
   other-modules:       Parser
   -- other-extensions:    
-  build-depends:       base >=4.6 && <4.7, containers >=0.5 && <0.6, mtl >=2.2 && <2.3, transformers >=0.4 && <0.5, disjoint-set >=0.2 && <0.3, hspec >=2.1 && <2.2, array
+  build-depends:       base >=4.4 && <4.10, containers >=0.5 && <0.6, mtl >=2.2 && <2.3, transformers >=0.4 && <0.5, disjoint-set >=0.2 && <0.3, hspec >=2.1 && <2.2, array
   hs-source-dirs:      src
   build-tools:         happy
   default-language:    Haskell2010
