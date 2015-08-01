@@ -7,9 +7,7 @@ Maintainer  : daniel.selsam@gmail.com
 
 The TypeChecker modules includes the core type-checker, whnf, is_def_eq, and both normalizer extensions.
 -}
-module TypeChecker (TypeChecker (..),
-                    TypeError (..),
-                    TCMethod,
+module TypeChecker (TypeError (..),
                     tc_eval,tc_run,
                     check,check_main,
                     infer_type,whnf,is_def_eq,ensure_type,ensure_sort
@@ -49,33 +47,35 @@ data TypeError = UndefGlobalUniv Name
                | WrongNumUnivParams Name [Name] [Level]
                deriving (Eq,Show)
 
-data TypeChecker = TypeChecker {
-  tc_env :: Environment ,
-  tc_level_names :: [Name] ,
-  tc_next_id :: Integer ,
-  tc_equiv_manager :: EM.EquivManager,
-  tc_infer_type_cache :: Map Expression Expression
+data TypeChecker_R = TypeChecker_R {
+  tcr_env :: Environment ,
+  tcr_level_names :: [Name]
+}  
+
+data TypeChecker_S = TypeChecker_S {
+  tcs_next_id :: Integer ,
+  tcs_equiv_manager :: EM.EquivManager,
+  tcs_infer_type_cache :: Map Expression Expression
   }
 
-mk_type_checker env level_names next_id = TypeChecker env level_names next_id EM.empty_equiv_manager Map.empty
+mk_type_checker_r env level_names  = TypeChecker_R env level_names
+mk_type_checker_s next_id = TypeChecker_S next_id EM.empty_equiv_manager Map.empty
 
-type TCMethod = ExceptT TypeError (State TypeChecker)
+type TCMethod = ExceptT TypeError (StateT TypeChecker_S (Reader TypeChecker_R))
 
 check :: Environment -> Declaration -> Either TypeError CertifiedDeclaration
 check env d = fmap fst $ tc_eval env (decl_level_names d) 0 (check_main d)
 
 tc_eval :: Environment -> [Name] -> Integer -> TCMethod a -> Either TypeError (a,Integer)
 tc_eval env level_names next_id tc_fn =
-  let (x,tc) = runState (runExceptT tc_fn) (mk_type_checker env level_names next_id) in
-  fmap (\val -> (val,tc_next_id tc)) x
+  let (x,tc) = runReader (runStateT (runExceptT tc_fn) (mk_type_checker_s next_id)) (mk_type_checker_r env level_names) in
+  fmap (\val -> (val,tcs_next_id tc)) x
 
 tc_run :: Environment -> [Name] -> Integer -> TCMethod a -> Either TypeError a
-tc_run env level_names next_id tc_fn = evalState (runExceptT tc_fn) (mk_type_checker env level_names next_id)
-
+tc_run env level_names next_id = fmap fst . (tc_eval env level_names next_id)
 
 check_main :: Declaration -> TCMethod CertifiedDeclaration
 check_main d = do
-  tc <- get
   check_no_local (decl_type d)
   maybe (return ()) check_no_local (decl_mb_val d)
   check_name (decl_name d)
@@ -83,15 +83,15 @@ check_main d = do
   sort <- infer_type (decl_type d)
   ensure_sort sort
   maybe (return ()) (check_val_matches_ty (decl_type d)) (decl_mb_val d)
-  return $ mk_certified_declaration (tc_env tc) d
+  asks tcr_env >>= return . (flip mk_certified_declaration d)
 
 ------
 
 tc_assert b err = if b then return () else throwE err
 
 check_no_local e = tc_assert (not $ has_local e) (DefHasLocals e)
-check_name name = get >>= (\tc -> maybe (return ()) (throwE . NameAlreadyDeclared) (lookup_declaration (tc_env tc) name))
-check_duplicated_params = get >>= (\tc -> tc_assert (tc_level_names tc == nub (tc_level_names tc)) DuplicateParam)
+check_name name = asks tcr_env >>= (\env -> maybe (return ()) (throwE . NameAlreadyDeclared) (lookup_declaration env name))
+check_duplicated_params = asks tcr_level_names >>= (\lnames -> tc_assert (lnames == nub lnames) DuplicateParam)
 check_val_matches_ty ty val = do
   val_ty <- infer_type val
   is_eq <- is_def_eq val_ty ty
@@ -123,7 +123,7 @@ ensure_pi e = case e of
 infer_type :: Expression -> TCMethod Expression
 infer_type e = do
   check_closed e
-  infer_type_cache <- gets tc_infer_type_cache
+  infer_type_cache <- gets tcs_infer_type_cache
   case Map.lookup e infer_type_cache of
     Just t -> return t
     Nothing -> do 
@@ -134,21 +134,22 @@ infer_type e = do
         Lambda lambda -> infer_lambda lambda
         Pi pi -> infer_pi pi
         App app -> infer_app app
-      infer_type_cache <- gets tc_infer_type_cache
-      modify (\tc -> tc { tc_infer_type_cache = Map.insert e t infer_type_cache })
+      infer_type_cache <- gets tcs_infer_type_cache
+      modify (\tc -> tc { tcs_infer_type_cache = Map.insert e t infer_type_cache })
       return t
 
 check_closed e = tc_assert (not $ has_free_vars e) (DefHasFreeVars e)
 
+check_level :: Level -> TCMethod ()
 check_level level = do
-  tc <- get
-  maybe (return ()) (throwE . UndefGlobalUniv) (get_undef_global level (env_global_names $ tc_env tc))
-  maybe (return ()) (throwE . UndefUnivParam)  (get_undef_param level (tc_level_names tc))
+  tcr <- ask
+  maybe (return ()) (throwE . UndefGlobalUniv) (get_undef_global level (env_global_names $ tcr_env tcr))
+  maybe (return ()) (throwE . UndefUnivParam)  (get_undef_param level (tcr_level_names tcr))
 
 infer_constant :: ConstantData -> TCMethod Expression
 infer_constant c = do
-  tc <- get
-  case lookup_declaration (tc_env tc) (const_name c) of
+  env <- asks tcr_env
+  case lookup_declaration env (const_name c) of
     Nothing -> throwE (ConstNotFound c)
     Just d -> do
       (d_level_names,c_levels) <- return $ (decl_level_names d, const_levels c)
@@ -227,14 +228,14 @@ unfold_names w e = case e of
 unfold_name_core :: Integer -> Expression -> TCMethod Expression
 unfold_name_core w e = case e of
   Constant const -> do
-    tc <- get
+    env <- asks tcr_env
     maybe (return e)
       (\d -> case decl_mb_val d of
           Just decl_val
             | decl_weight d >= w && length (const_levels const) == length (decl_level_names d)
               -> unfold_name_core w (instantiate_univ_params decl_val (decl_level_names d) $ const_levels const)
           _ -> return e)
-      (lookup_declaration (tc_env tc) (const_name const))
+      (lookup_declaration env (const_name const))
   _ -> return e
 
 normalize_ext :: Expression -> TCMethod (Maybe Expression)
@@ -306,7 +307,7 @@ is_def_eq_core t s = do
     _ -> return ()
 
   is_eq_eta_expansion t_n s_n
-  gets tc_env >>= (\env -> deq_try_if (is_prop_proof_irrel env) $ is_def_proof_irrel t_n s_n)
+  asks tcr_env >>= (\env -> deq_try_if (is_prop_proof_irrel env) $ is_def_proof_irrel t_n s_n)
   
 
 reduce_def_eq :: Expression -> Expression -> DefEqMethod (Expression,Expression)
@@ -355,8 +356,8 @@ is_delta env e = case (get_operator e) of
 -- | Perform one lazy delta-reduction step.
 lazy_delta_reduction_step :: Expression -> Expression -> DefEqMethod (Expression,Expression,ReductionStatus)
 lazy_delta_reduction_step t s = do
-  tc <- get
-  (md_t,md_s) <- return $ (is_delta (tc_env tc) t,is_delta (tc_env tc) s)
+  env <- asks tcr_env
+  (md_t,md_s) <- return $ (is_delta env t,is_delta env s)
   (t_n,s_n,status) <-
     case (md_t,md_s) of
       (Nothing,Nothing) -> return (t,s,DefUnknown)
@@ -458,8 +459,8 @@ is_def_eq_levels ls1 ls2 = genericLength ls1 == genericLength ls2 &&
 -----
 gensym :: TCMethod Integer
 gensym = do
-  n <- gets tc_next_id
-  modify (\tc -> tc { tc_next_id = n+1 })
+  n <- gets tcs_next_id
+  modify (\tc -> tc { tcs_next_id = n+1 })
   return n
 
 -- TODO make sure only this module can create these
@@ -469,14 +470,14 @@ mk_certified_declaration env d = CertifiedDeclaration env d
 
 em_add_equiv :: Expression -> Expression -> DefEqMethod ()
 em_add_equiv e1 e2 = do
-  eqv <- gets tc_equiv_manager
-  modify (\tc -> tc { tc_equiv_manager = EM.add_equiv e1 e2 eqv })
+  eqv <- gets tcs_equiv_manager
+  modify (\tc -> tc { tcs_equiv_manager = EM.add_equiv e1 e2 eqv })
 
 em_is_equiv :: Expression -> Expression -> DefEqMethod ()
 em_is_equiv e1 e2 = do
-  eqv <- gets tc_equiv_manager  
+  eqv <- gets tcs_equiv_manager  
   let (is_equiv,new_eqv) = EM.is_equiv e1 e2 eqv in do
-    modify (\tc -> tc { tc_equiv_manager = new_eqv })
+    modify (\tc -> tc { tcs_equiv_manager = new_eqv })
     if is_equiv then throwE True else return ()
 
 {- extensions -}
@@ -487,7 +488,7 @@ lift_maybe = maybe mzero return
 -- | Reduce terms 'e' of the form 'elim_k A C e p[A,b] (intro_k_i A b u)'
 inductive_norm_ext :: Expression -> MaybeT TCMethod Expression
 inductive_norm_ext e = do
-  elim_infos <- liftM (iext_elim_infos . env_ind_ext . tc_env) get
+  elim_infos <- liftM (iext_elim_infos . env_ind_ext . tcr_env) ask
   elim_fn_const <- lift_maybe $ maybe_constant (get_operator e)
   einfo@(ExtElimInfo ind_name lp_names num_params num_ACe num_indices k_target dep_elim) <-
     lift_maybe $ Map.lookup (const_name elim_fn_const) elim_infos
@@ -511,7 +512,7 @@ inductive_norm_ext e = do
       | eei_K_target einfo = do
         mb_result <- lift . runMaybeT $
                      (do intro_app <- to_intro_when_K einfo major
-                         map_comp_rules <- liftM (iext_comp_rules . env_ind_ext . tc_env) get                                     
+                         map_comp_rules <- liftM (iext_comp_rules . env_ind_ext . tcr_env) ask
                          intro_app_op_const <- lift_maybe $ maybe_constant (get_operator intro_app)
                          comp_rule <- lift_maybe $ Map.lookup (const_name intro_app_op_const) map_comp_rules
                          return (intro_app,comp_rule))
@@ -529,7 +530,7 @@ inductive_norm_ext e = do
 -- | Return 'True' if 'e' is an introduction rule for an eliminator named 'elim'
 is_intro_for :: Name -> Expression -> MaybeT TCMethod CompRule
 is_intro_for elim_name e = do
-  map_comp_rules <- liftM (iext_comp_rules . env_ind_ext . tc_env) get
+  map_comp_rules <- liftM (iext_comp_rules . env_ind_ext . tcr_env) ask
   intro_fn_const <- lift_maybe $ maybe_constant (get_operator e)
   comp_rule <- lift_maybe $ Map.lookup (const_name intro_fn_const) map_comp_rules
   guard (cr_elim_name comp_rule == elim_name)
@@ -539,7 +540,7 @@ is_intro_for elim_name e = do
 -- to the default constructor. For example, if (e : a = a), then this method returns (eq.refl a)
 to_intro_when_K :: ExtElimInfo -> Expression -> MaybeT TCMethod Expression
 to_intro_when_K einfo e = do
-  env <- gets tc_env
+  env <- asks tcr_env
   assert (eei_K_target einfo) "to_intro_when_K should only be called when K_target holds" (return ())
   app_type <- lift $ infer_type e >>= whnf
   app_type_I <- return $ get_operator app_type
@@ -571,7 +572,7 @@ mk_nullary_intro env app_type num_params =
 
 quotient_norm_ext :: Expression -> MaybeT TCMethod Expression
 quotient_norm_ext e = do
-  env <- gets tc_env
+  env <- asks tcr_env
   guard (env_quot_enabled env)
   fn <- lift_maybe $ maybe_constant (get_operator e)
   (mk_pos,arg_pos) <- if const_name fn == quot_lift then return (5,3) else
