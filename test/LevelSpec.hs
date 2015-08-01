@@ -129,12 +129,6 @@ level_leq_spec1 = do
     describe "level_leq1" $ do
       it "should work with max on the rhs" $ do
         level_leq u (mk_max (mk_succ mk_zero) u) `shouldBe` True
-     
-
-{-assert(max(succ(max(succ(v), u)), max(v, succ(succ(u)))):norm() == max(succ(succ(u)), succ(succ(v))))
-assert(imax(succ(succ(max(u, u))), v):norm() == imax(succ(succ(u)), v))
-assert(max(u, max(succ(succ(z)), max(u, succ(z)))):norm() == max(succ(succ(z)), u))
--}
 
 spec :: Spec
 spec = do
@@ -144,3 +138,4 @@ spec = do
   levels_misc_spec
   normalize_spec1
   level_leq_spec1
+  
