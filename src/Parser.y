@@ -1,12 +1,21 @@
 {
-module Parser where
+{-|
+Module      : Parser
+Description : Parse the Lean kernel export format
+Copyright   : (c) Daniel Selsam, 2015
+License     : GPL-3
+Maintainer  : daniel.selsam@gmail.com
+
+Parse the Lean kernel export format
+-}
+module Parser (parse_statement,lex_statement,Statement (..), IDecl (..), IIntro (..)) where
 import Data.Char
 import Expression
 }
 
-%name parseStatement
+%name parse_statement
 %tokentype { Token }
-%error { parseError }
+%error { parse_error }
 
 %token 
 NS { TokenNS }
@@ -112,56 +121,51 @@ data Statement = StatementNS Integer Integer String
 data IDecl = IDecl Integer Integer [IIntro] deriving (Show)
 data IIntro = IIntro Integer Integer deriving (Show)
 
-parseError :: [Token] -> a
-parseError tokens = error $ "parse error"
+parse_error :: [Token] -> a
+parse_error tokens = error $ "parse error"
 
-lexStatement :: String -> [Token]
-lexStatement [] = []
-lexStatement (c:cs) 
-    | c == '\n' = TokenNL : lexStatement cs
-    | c == '|' = TokenBAR : lexStatement cs
-    | isSpace c = lexStatement cs
-    | isDigit c = lexInt (c:cs)
-    | otherwise = lexWord (c:cs)
+lex_statement :: String -> [Token]
+lex_statement [] = []
+lex_statement (c:cs) 
+    | c == '\n' = TokenNL : lex_statement cs
+    | c == '|' = TokenBAR : lex_statement cs
+    | isSpace c = lex_statement cs
+    | isDigit c = lex_int (c:cs)
+    | otherwise = lex_word (c:cs)
 
-lexInt cs = TokenInt (read num) : lexStatement rest
+lex_int cs = TokenInt (read num) : lex_statement rest
       where (num,rest) = span isDigit cs
 
-lexWord cs = case span (not . isSpace) cs of
-    ("#NS",rest) -> TokenNS : lexStatement rest
-    ("#NI",rest) -> TokenNI : lexStatement rest
+lex_word cs = case span (not . isSpace) cs of
+    ("#NS",rest) -> TokenNS : lex_statement rest
+    ("#NI",rest) -> TokenNI : lex_statement rest
 
-    ("#US",rest) -> TokenUS : lexStatement rest
-    ("#UM",rest) -> TokenUM : lexStatement rest
-    ("#UIM",rest) -> TokenUIM : lexStatement rest
-    ("#UP",rest) -> TokenUP : lexStatement rest
-    ("#UG",rest) -> TokenUG : lexStatement rest
+    ("#US",rest) -> TokenUS : lex_statement rest
+    ("#UM",rest) -> TokenUM : lex_statement rest
+    ("#UIM",rest) -> TokenUIM : lex_statement rest
+    ("#UP",rest) -> TokenUP : lex_statement rest
+    ("#UG",rest) -> TokenUG : lex_statement rest
 
-    ("#EV",rest) -> TokenEV : lexStatement rest
-    ("#ES",rest) -> TokenES : lexStatement rest
-    ("#EC",rest) -> TokenEC : lexStatement rest
-    ("#EA",rest) -> TokenEA : lexStatement rest
-    ("#EL",rest) -> TokenEL : lexStatement rest
-    ("#EP",rest) -> TokenEP : lexStatement rest
+    ("#EV",rest) -> TokenEV : lex_statement rest
+    ("#ES",rest) -> TokenES : lex_statement rest
+    ("#EC",rest) -> TokenEC : lex_statement rest
+    ("#EA",rest) -> TokenEA : lex_statement rest
+    ("#EL",rest) -> TokenEL : lex_statement rest
+    ("#EP",rest) -> TokenEP : lex_statement rest
 
-    ("#BD",rest) -> TokenBD : lexStatement rest
-    ("#BI",rest) -> TokenBI : lexStatement rest
-    ("#BS",rest) -> TokenBS : lexStatement rest
-    ("#BC",rest) -> TokenBC : lexStatement rest
+    ("#BD",rest) -> TokenBD : lex_statement rest
+    ("#BI",rest) -> TokenBI : lex_statement rest
+    ("#BS",rest) -> TokenBS : lex_statement rest
+    ("#BC",rest) -> TokenBC : lex_statement rest
 
-    ("#UNI",rest) -> TokenUNI : lexStatement rest
-    ("#DEF",rest) -> TokenDEF : lexStatement rest
-    ("#AX",rest) -> TokenAX : lexStatement rest
+    ("#UNI",rest) -> TokenUNI : lex_statement rest
+    ("#DEF",rest) -> TokenDEF : lex_statement rest
+    ("#AX",rest) -> TokenAX : lex_statement rest
     
-    ("#BIND",rest) -> TokenBIND : lexStatement rest
-    ("#IND",rest) -> TokenIND : lexStatement rest
-    ("#INTRO",rest) -> TokenINTRO : lexStatement rest
-    ("#EIND",rest) -> TokenEIND : lexStatement rest
-    (str,rest) -> (TokenString str) : lexStatement rest
+    ("#BIND",rest) -> TokenBIND : lex_statement rest
+    ("#IND",rest) -> TokenIND : lex_statement rest
+    ("#INTRO",rest) -> TokenINTRO : lex_statement rest
+    ("#EIND",rest) -> TokenEIND : lex_statement rest
+    (str,rest) -> (TokenString str) : lex_statement rest
     
---main = do
---  args <- getArgs
---  content <- readFile (args !! 0)
---  print . parseExportFile . lexStatement $ content
-
 }

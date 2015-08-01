@@ -1,4 +1,4 @@
-module Main where
+module Main (main) where
 
 import System.Environment
 import Parser
@@ -40,7 +40,7 @@ data Context = Context {
   }
 
 
-initial_context = Context (Map.insert 0 Anonymous Map.empty) (Map.insert 0 mk_level_zero Map.empty) Map.empty empty_environment 0 0
+initial_context = Context (Map.insert 0 no_name Map.empty) (Map.insert 0 mk_zero Map.empty) Map.empty empty_environment 0 0
 
 interpret :: [Statement] -> ExceptT KernelError (State Context) Environment
 interpret [] = gets global_env
@@ -52,10 +52,10 @@ interpret_statement statement =
   case statement of
     StatementNI n_idx o_idx i -> do m <- gets name_map
                                     assert_undefined n_idx m RepeatedName
-                                    modify (\c -> c { name_map = Map.insert n_idx (AppendInteger (m Map.! o_idx) i) m } )
+                                    modify (\c -> c { name_map = Map.insert n_idx (name_append_i (m Map.! o_idx) i) m } )
     StatementNS n_idx o_idx s -> do m <- gets name_map
                                     assert_undefined n_idx m RepeatedName
-                                    modify (\c -> c { name_map = Map.insert n_idx (AppendString (m Map.! o_idx) s) m } )
+                                    modify (\c -> c { name_map = Map.insert n_idx (name_append_s (m Map.! o_idx) s) m } )
 
     StatementUS n_idx o_idx -> do m <- gets level_map
                                   assert_undefined n_idx m RepeatedLevel
@@ -126,7 +126,7 @@ interpret_statement statement =
              inductive_decls = map (instantiate_idecl mn me) idecls in do
            trace ("BIND(" ++ show did ++ "): " ++ (show (map (\(InductiveDecl name _ _) -> name) inductive_decls))) (return ())
            old_env <- gets global_env
-           new_env <- register_inductive old_env level_names num_params inductive_decls
+           new_env <- register_inductive old_env (MutualInductiveDecl level_names num_params inductive_decls)
            modify (\c -> c { global_env = new_env })
 
     StatementUNI name_idx -> do mn <- gets name_map
@@ -172,8 +172,8 @@ instantiate_idecl mn me (IDecl n_idx e_idx irs) =
   where
     instantiate_intro_rule (IIntro n_idx e_idx) = IntroRule (mn Map.! n_idx) (me Map.! e_idx)
 
-register_inductive env level_param_names num_params idecls =
-  case Inductive.add_inductive env level_param_names num_params idecls of
+register_inductive env mdecl =
+  case Inductive.add_inductive env mdecl of
     Left err -> throwE $ InductiveDeclError err
     Right env -> return env
 
@@ -187,12 +187,12 @@ isEIND x = case words x of
   ("#EIND" : _) -> True
   _ -> False
 
-splitAtStatements s = splitLines (lines s) where
-  splitLines [] = []
-  splitLines (x:xs)
+split_at_statements s = split_lines (lines s) where
+  split_lines [] = []
+  split_lines (x:xs)
     | isBIND x = case findIndex isEIND xs of
-      Just k -> (unlines $ x : (take (k+1) xs)) : splitLines (drop (k+1) xs)
-    | otherwise = x : splitLines xs
+      Just k -> (unlines $ x : (take (k+1) xs)) : split_lines (drop (k+1) xs)
+    | otherwise = x : split_lines xs
 
 print_usage = putStrLn "usage: leantc <filename>"
 
@@ -203,7 +203,7 @@ main = do
     (_:_:_) -> print_usage
     _ -> do
       content <- readFile (args !! 0)
-      let statements = map (parseStatement . lexStatement) $ splitAtStatements content in
+      let statements = map (parse_statement . lex_statement) $ split_at_statements content in
         case evalState (runExceptT . interpret $ statements) initial_context of
           Left err -> print err
           Right _ -> print "Congratulations!"

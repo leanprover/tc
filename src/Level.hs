@@ -1,23 +1,16 @@
-{-
-Copyright (c) 2015 Daniel Selsam.
+{-|
+Module      : Level
+Description : Universe levels
+Copyright   : (c) Daniel Selsam, 2015
+License     : GPL-3
+Maintainer  : daniel.selsam@gmail.com
 
-This file is part of the Lean reference type checker.
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+Universe levels
 -}
-
-module Level where
+module Level (Level (..),SuccData (..),MaxCoreData (..),mk_zero,mk_succ,mk_max,mk_imax,mk_level_param,mk_global_univ,
+              level_leq,level_equiv,instantiate_level,has_param,
+              mk_level_one,mk_level_two,get_undef_global,get_undef_param,is_zero,is_definitely_not_zero) where
+  
 import Control.Monad
 import Name
 
@@ -29,10 +22,10 @@ import Data.Set (Set)
 import Debug.Trace
 newtype SuccData = SuccData { succ_of :: Level } deriving (Eq,Show,Ord)
 data MaxCoreData = MaxCoreData { is_imax :: Bool, max_lhs :: Level, max_rhs :: Level } deriving (Eq,Show,Ord)
-newtype LevelParamData = LevelParamData { param_name :: Name } deriving (Eq,Show,Ord)
-newtype GlobalLevelData = GlobalLevelData { global_name :: Name } deriving (Eq,Show,Ord)
 
--- TODO inefficient
+-- | Universe level.
+--
+-- Note: we package the data for the different constructors to permit caching.
 data Level = Zero
            | Succ SuccData
            | Max MaxCoreData
@@ -41,22 +34,21 @@ data Level = Zero
            | GlobalLevel Name
            deriving (Eq,Ord)
 
-showLevel :: Level -> String
-showLevel l = case to_offset l of
-  (l,0) -> "{ " ++ showLevel_core l ++ " }"
-  (l,k) -> "{ <" ++ show k ++ "> " ++ showLevel_core l ++ " }"
+show_level :: Level -> String
+show_level l = case to_offset l of
+  (l,0) -> "{ " ++ show_level_core l ++ " }"
+  (l,k) -> "{ <" ++ show k ++ "> " ++ show_level_core l ++ " }"
   where
-    showLevel_core :: Level -> String
-    showLevel_core l = case l of
+    show_level_core :: Level -> String
+    show_level_core l = case l of
       Zero -> "0"
-      Max max -> "(max " ++ showLevel (max_lhs max) ++ " " ++ showLevel (max_rhs max) ++ ")"
-      IMax imax -> "(max " ++ showLevel (max_lhs imax) ++ " " ++ showLevel (max_rhs imax) ++ ")"
+      Max max -> "(max " ++ show_level (max_lhs max) ++ " " ++ show_level (max_rhs max) ++ ")"
+      IMax imax -> "(max " ++ show_level (max_lhs imax) ++ " " ++ show_level (max_rhs imax) ++ ")"
       LevelParam lp -> show lp
       GlobalLevel gl -> "!" ++ show gl
 
-instance Show Level where show e = showLevel e
+instance Show Level where show e = show_level e
 
-  
 
 get_undef_param :: Level -> [Name] -> Maybe Name
 get_undef_param l ns = case l of
@@ -79,13 +71,13 @@ get_undef_global l ns = case l of
 {- |
 A level is explicit if it is of the form 'Succ^k Zero' for some 'k'.
 
->>> is_explicit mk_level_zero
+>>> is_explicit mk_zero
 True  
 
->>> is_explicit (mk_succ (mk_succ mk_level_zero))
+>>> is_explicit (mk_succ (mk_succ mk_zero))
 True
 
->>> is_explicit (mk_max (mk_level_param (mk_name ["l"])) mk_level_zero)
+>>> is_explicit (mk_max (mk_level_param (mk_name ["l"])) mk_zero)
 False
 -}
 is_explicit l = case l of
@@ -107,10 +99,10 @@ get_depth l = case l of
 {- |
 Factors out outermost sequence of 'mk_succ' applications.
 
->>> to_offset mk_level_zero
+>>> to_offset mk_zero
 (Zero,0)
 
->>> to_offset (mk_succ mk_level_zero)
+>>> to_offset (mk_succ mk_zero)
 (Zero,1)
 
 >>> to_offset (mk_succ (mk_level_param (mk_name ["l"])))
@@ -124,11 +116,11 @@ is_zero l = case l of
   Zero -> True
   _ -> False
 
-mk_level_zero = Zero
+mk_zero = Zero
 mk_succ l = Succ (SuccData l)
 
-mk_level_one = mk_succ mk_level_zero
-mk_level_two = mk_succ $ mk_succ mk_level_zero
+mk_level_one = mk_succ mk_zero
+mk_level_two = mk_succ $ mk_succ mk_zero
 
 mk_iterated_succ l k
   | k == 0 = l
@@ -177,7 +169,6 @@ has_param l = case l of
   _ -> False
 
 
--- TODO put LevelKind in another name space and import qualified?
 level_kind_rank l = case l of
   Zero -> 0
   Succ _ -> 1
@@ -239,11 +230,15 @@ normalize_level l = let p = to_offset l in case fst p of
     in
      mk_big_max lifted_args
 
-mk_big_max [] = mk_level_zero
+mk_big_max [] = mk_zero
 mk_big_max [l] = l
 mk_big_max (x:xs) = mk_max x (mk_big_max xs)
 
-    
+-- | Check whether two levels are equivalent (modulo normalizing 'max')
+--
+-- >>> let lp = mk_level_param (mk_name ["l1"])
+-- >>> level_equiv (mk_max (mk_max mk_level_one lp) mk_zero) (mk_max lp mk_level_one)
+-- True
 level_equiv l1 l2 = l1 == l2 || normalize_level l1 == normalize_level l2
 
 

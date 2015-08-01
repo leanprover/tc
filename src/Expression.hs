@@ -1,23 +1,25 @@
-{-
-Copyright (c) 2015 Daniel Selsam.
+{-|
+Module      : Expression
+Description : Expressions
+Copyright   : (c) Daniel Selsam, 2015
+License     : GPL-3
+Maintainer  : daniel.selsam@gmail.com
 
-This file is part of the Lean reference type checker.
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+Expressions
 -}
-
-module Expression where
+module Expression (Expression (..),
+                   VarData (..), LocalData (..), ConstantData (..), SortData (..), AppData (..), BindingData (..),
+                   BinderInfo (..),
+                   mk_constant,mk_local,mk_var,mk_sort,mk_lambda,mk_pi,mk_app,
+                   mk_lambda_anon,mk_pi_anon,mk_local_data,mk_local_data_full,
+                   instantiate,instantiate_seq,instantiate_univ_params,
+                   abstract_pi,abstract_pi_seq,abstract_lambda_seq,
+                   has_local,has_free_vars,closed,
+                   get_operator,get_app_args,get_app_op_args,body_of_lambda,
+                   mk_Prop,mk_app_seq,
+                   find_in_expr,
+                   maybe_constant)
+where
 
 import Control.Monad
 
@@ -67,8 +69,8 @@ data Expression = Var VarData
                 | App AppData
                 deriving (Eq,Ord)
 
-showExpression :: Expression -> String
-showExpression e = case e of
+show_expression :: Expression -> String
+show_expression e = case e of
   Var var -> "#" ++ show (var_idx var)
   Local local -> show local
   Sort sort -> "(Sort: " ++ show (sort_level sort) ++ ")"
@@ -77,11 +79,9 @@ showExpression e = case e of
   Pi pi -> "(Pi: " ++ show (binding_domain pi) ++ " -> " ++ show (binding_body pi) ++ ")"
   App app -> let (f,args) = (get_operator e,get_app_args e) in "(App: " ++ show f ++ " @ " ++ show args ++ ")"
 
-instance Show Expression where show e = showExpression e
+instance Show Expression where show e = show_expression e
 
 -- Helpers
-
-app_fn_arg (AppData fn arg _) = (fn,arg)
 
 has_local e = case e of
   Var _ -> False
@@ -145,7 +145,7 @@ get_app_args e = get_app_args_core e [] where
 mk_sort l = Sort (SortData l)
 mk_var v_idx = Var (VarData v_idx)
 
-mk_Prop = mk_sort mk_level_zero
+mk_Prop = mk_sort mk_zero
 mk_Type = mk_sort mk_level_one
 mk_Type2 = mk_sort mk_level_two
 
@@ -172,10 +172,10 @@ mk_binding is_pi name domain body binfo =
     False -> Lambda (BindingData is_pi name domain body binfo ecache)
 
 mk_pi = mk_binding True
-mk_pi_anon domain body = mk_pi Anonymous domain body BinderDefault
+mk_pi_anon domain body = mk_pi no_name domain body BinderDefault
 
 mk_lambda = mk_binding False
-mk_lambda_anon domain body = mk_lambda Anonymous domain body BinderDefault
+mk_lambda_anon domain body = mk_lambda no_name domain body BinderDefault
 
 mk_local_data name pp_name ty = mk_local_data_full name pp_name ty BinderDefault
 mk_local_data_full name pp_name ty binfo = LocalData name pp_name ty binfo

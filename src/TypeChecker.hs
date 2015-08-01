@@ -1,23 +1,20 @@
-{-
-Copyright (c) 2015 Daniel Selsam.
+{-|
+Module      : TypeChecker
+Description : Type checker
+Copyright   : (c) Daniel Selsam, 2015
+License     : GPL-3
+Maintainer  : daniel.selsam@gmail.com
 
-This file is part of the Lean reference type checker.
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+The TypeChecker modules includes the core type-checker, whnf, is_def_eq, and both normalizer extensions.
 -}
-
-module TypeChecker where
+module TypeChecker (TypeChecker (..),
+                    TypeError (..),
+                    TCMethod,
+                    tc_eval,tc_run,
+                    check,check_main,
+                    infer_type,whnf,is_def_eq,ensure_type,ensure_sort
+                   )
+where
 
 import Control.Monad.State
 import Control.Monad.Reader
@@ -164,7 +161,7 @@ infer_constant c = do
 mk_local_for :: BindingData -> TCMethod LocalData
 mk_local_for bind = do
   next_id <- gensym
-  return $ mk_local_data_full (mk_system_name next_id) (binding_name bind) (binding_domain bind) (binding_info bind)
+  return $ mk_local_data_full (mk_system_name_i next_id) (binding_name bind) (binding_domain bind) (binding_info bind)
   
 infer_lambda :: BindingData -> TCMethod Expression
 infer_lambda lam = do
@@ -215,7 +212,7 @@ whnf_core_delta w e = do
 whnf_core :: Expression -> TCMethod Expression
 whnf_core e = case e of
   App app -> do
-    (fn,arg) <- return $ app_fn_arg app
+    (fn,arg) <- return $ (app_fn app, app_arg app)
     fn_whnf <- whnf_core fn
     case fn_whnf of
       Lambda lam -> whnf_core (instantiate (binding_body lam) arg)
@@ -468,7 +465,7 @@ is_def_eq_binding :: BindingData -> BindingData -> DefEqMethod ()
 is_def_eq_binding bind1 bind2 = do
   deq_try_and  [(is_def_eq_main (binding_domain bind1) (binding_domain bind2)),
                 do next_id <- lift gensym
-                   local <- return $ mk_local (mk_system_name next_id) (binding_name bind1) (binding_domain bind1) (binding_info bind1)
+                   local <- return $ mk_local (mk_system_name_i next_id) (binding_name bind1) (binding_domain bind1) (binding_info bind1)
                    is_def_eq_main (instantiate (binding_body bind1) local) (instantiate (binding_body bind2) local)]
 
 

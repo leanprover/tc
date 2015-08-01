@@ -1,23 +1,13 @@
-{-
-Copyright (c) 2015 Daniel Selsam.
+{-|
+Module      : Inductive
+Description : Process inductive declarations
+Copyright   : (c) Daniel Selsam, 2015
+License     : GPL-3
+Maintainer  : daniel.selsam@gmail.com
 
-This file is part of the Lean reference type checker.
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+The Inductive module processes inductive declarations and generates eliminators.
 -}
-
-module Inductive where
+module Inductive (InductiveDeclError (..),add_inductive) where
 
 import Control.Monad
 import Control.Monad.State
@@ -77,7 +67,7 @@ data AddInductiveData = AddInductiveData {
   m_env :: Environment ,
   m_level_names :: [Name],
   m_num_params :: Integer,
-  m_decls :: [InductiveDecl],
+  m_idecls :: [InductiveDecl],
   m_is_not_zero :: Bool,
   m_levels :: [Level],
   m_next_id :: Integer, 
@@ -85,19 +75,19 @@ data AddInductiveData = AddInductiveData {
   m_dep_elim :: Bool,
 
   m_param_consts :: [LocalData], -- local constants used to represent global parameters
-  m_it_levels :: [Level], -- the levels for each inductive datatype in [m_decls]
-  m_it_consts :: [ConstantData], -- the constants for each inductive datatype in [m_decls]
-  m_it_num_args :: [Integer], -- total number of arguments (params + indices) for each inductive datatype in m_decls
+  m_it_levels :: [Level], -- the levels for each inductive datatype in [m_idecls]
+  m_it_consts :: [ConstantData], -- the constants for each inductive datatype in [m_idecls]
+  m_it_num_args :: [Integer], -- total number of arguments (params + indices) for each inductive datatype in m_idecls
 
   m_elim_infos :: [ElimInfo],
   m_K_target :: Bool
 }
 
-mk_add_inductive_data env level_names num_params decls = AddInductiveData { 
+mk_add_inductive_data env level_names num_params idecls = AddInductiveData { 
   m_env = env,
   m_level_names = level_names,
   m_num_params = num_params,
-  m_decls = decls,
+  m_idecls = idecls,
   m_is_not_zero = False,
   m_levels = map LevelParam level_names,
   m_next_id = 0, -- TODO
@@ -118,20 +108,24 @@ gensym = do
 
 mk_fresh_name = do
   id <- gensym
-  return $ AppendInteger (mk_system_name id) id
+  return $ name_append_i (mk_system_name_i id) id
 
-add_inductive :: Environment -> [Name] -> Integer -> [InductiveDecl] -> Either InductiveDeclError Environment
-add_inductive env level_names num_params decls =
-  let (a,s) = runState (runExceptT add_inductive_core) (mk_add_inductive_data env level_names num_params decls) in
+add_inductive :: Environment -> MutualInductiveDecl -> Either InductiveDeclError Environment
+add_inductive env mdecl =
+  let (a,s) = runState (runExceptT add_inductive_core) (mk_add_inductive_data
+                                                        env
+                                                        (mid_level_param_names mdecl)
+                                                        (mid_num_params mdecl)
+                                                        (mid_idecls mdecl)) in
   case a of
     Left err -> Left err
     Right () -> Right $ m_env s
   
 type AddInductiveMethod = ExceptT InductiveDeclError (State AddInductiveData)
 
-ind_run ind_fn env level_names num_params decls = runState (runExceptT ind_fn) (mk_add_inductive_data env level_names num_params decls)
-ind_exec ind_fn env level_names num_params decls = execState (runExceptT ind_fn) (mk_add_inductive_data env level_names num_params decls)
-ind_eval ind_fn env level_names num_params decls = evalState (runExceptT ind_fn) (mk_add_inductive_data env level_names num_params decls)
+ind_run ind_fn env level_names num_params idecls = runState (runExceptT ind_fn) (mk_add_inductive_data env level_names num_params idecls)
+ind_exec ind_fn env level_names num_params idecls = execState (runExceptT ind_fn) (mk_add_inductive_data env level_names num_params idecls)
+ind_eval ind_fn env level_names num_params idecls = evalState (runExceptT ind_fn) (mk_add_inductive_data env level_names num_params idecls)
 
 add_inductive_core :: AddInductiveMethod ()
 add_inductive_core = do
@@ -147,41 +141,41 @@ add_inductive_core = do
 check_inductive_types :: AddInductiveMethod ()
 check_inductive_types = do
   ind_data <- get
-  case m_decls ind_data of
+  case m_idecls ind_data of
     [] -> throwE NoInductiveTypeDecls
-    decl : decls -> do check_inductive_decl True decl
-                       mapM_ (check_inductive_decl False) decls
+    idecl : idecls -> do check_inductive_idecl True idecl
+                         mapM_ (check_inductive_idecl False) idecls
 
   
-check_inductive_decl :: Bool -> InductiveDecl -> AddInductiveMethod ()
-check_inductive_decl first (InductiveDecl name ty intro_rules) = do
+check_inductive_idecl :: Bool -> InductiveDecl -> AddInductiveMethod ()
+check_inductive_idecl first (InductiveDecl name ty intro_rules) = do
   level_names <- gets m_level_names
   check_type ty level_names
-  check_inductive_decl_core first 0 name ty 
+  check_inductive_idecl_core first 0 name ty 
 
 mk_local_for :: BindingData -> AddInductiveMethod LocalData
 mk_local_for bind = do
   next_id <- gensym
-  return $ mk_local_data_full (mk_system_name next_id) (binding_name bind) (binding_domain bind) (binding_info bind)
+  return $ mk_local_data_full (mk_system_name_i next_id) (binding_name bind) (binding_domain bind) (binding_info bind)
 
 ind_assert b err = if b then return () else throwE err
 
-check_inductive_decl_core :: Bool -> Integer -> Name -> Expression -> AddInductiveMethod ()
-check_inductive_decl_core first i name ty = do
+check_inductive_idecl_core :: Bool -> Integer -> Name -> Expression -> AddInductiveMethod ()
+check_inductive_idecl_core first i name ty = do
   num_params <- gets m_num_params
   case ty of
     Pi pi | i < num_params ->
       case first of
         True -> do local <- mk_local_for pi
                    modify (\ind_data -> ind_data { m_param_consts = m_param_consts ind_data ++ [local] })
-                   check_inductive_decl_core first (i+1) name (instantiate (binding_body pi) (Local local))
+                   check_inductive_idecl_core first (i+1) name (instantiate (binding_body pi) (Local local))
         False -> do param_consts <- gets m_param_consts
                     local <- return $ genericIndex param_consts i
                     is_eq <- is_def_eq (binding_domain pi) (local_type local)
                     if is_eq
-                      then check_inductive_decl_core first (i+1) name (instantiate (binding_body pi) (Local local))
+                      then check_inductive_idecl_core first (i+1) name (instantiate (binding_body pi) (Local local))
                       else throwE ParamsOfInductiveTypesMustMatch
-    Pi pi -> check_inductive_decl_core first (i+1) name (binding_body pi)
+    Pi pi -> check_inductive_idecl_core first (i+1) name (binding_body pi)
     _ -> do num_params <- gets m_num_params
             ind_assert (i >= num_params) $ NumParamsMismatchInInductiveDecl i num_params
             modify (\ind_data -> ind_data { m_it_num_args = m_it_num_args ind_data ++ [i] })
@@ -202,8 +196,8 @@ handle_impredicative_env False sort = do
 -- Add all datatype declarations to environment.
 declare_inductive_types :: AddInductiveMethod ()
 declare_inductive_types = do
-  gets m_decls >>= mapM_ (\decl -> do
-                             cdecl <- certify_ideclaration decl
+  gets m_idecls >>= mapM_ (\idecl -> do
+                             cdecl <- certify_ideclaration idecl
                              update_m_env (flip env_add cdecl))
   ext_add_inductive_info
   
@@ -219,16 +213,16 @@ declare_inductive_types = do
 -}
 
 check_intro_rules :: AddInductiveMethod ()
-check_intro_rules = gets m_decls >>= check_intro_rules_core 0
+check_intro_rules = gets m_idecls >>= check_intro_rules_core 0
 
 check_intro_rules_core :: Integer -> [InductiveDecl] -> AddInductiveMethod ()
-check_intro_rules_core i decls =
-  case decls of
+check_intro_rules_core i idecls =
+  case idecls of
     [] -> return ()
     (InductiveDecl _ _ intro_rules):ds -> mapM_ (check_intro_rule i) intro_rules >> check_intro_rules_core (i+1) ds
 
 {-
-  Check the intro_rule ir of the given inductive decl. d_idx is the position of d in m_decls.
+  Check the intro_rule ir of the given inductive decl. d_idx is the position of d in m_idecls.
   See check_intro_rules.
 -}
 check_intro_rule :: Integer -> IntroRule -> AddInductiveMethod ()
@@ -253,7 +247,7 @@ check_intro_rule_core d_idx param_num found_rec name ty =
                           it_level <- liftM (flip genericIndex d_idx . m_it_levels) get
                           env <- gets m_env
                           ind_assert (level_leq (sort_level sort) it_level || (is_zero it_level && is_impredicative env))
-                            (UniLevelOfArgTooBig param_num name (normalize_level $ sort_level sort) (normalize_level it_level))
+                            (UniLevelOfArgTooBig param_num name (sort_level sort) (it_level))
                           domain_ty <- whnf (binding_domain pi)
                           check_positivity domain_ty name param_num
                           is_rec <- is_rec_argument domain_ty
@@ -322,7 +316,7 @@ is_valid_it_app_core ty = do
 
 -- Add all introduction rules (aka constructors) to environment.
 declare_intro_rules =
-  gets m_decls >>=
+  gets m_idecls >>=
   mapM_ (\(InductiveDecl it_name _ intro_rules) -> do
             mapM_ (\(IntroRule ir_name ty) -> do
                       level_names <- gets m_level_names
@@ -337,15 +331,15 @@ declare_elim_rules = do
   init_dep_elim
   init_elim_level
   init_elim_info
-  decls <- gets m_decls
-  mapM_ (uncurry declare_elim_rule) (zip decls [0..])
+  idecls <- gets m_idecls
+  mapM_ (uncurry declare_elim_rule) (zip idecls [0..])
 
 init_dep_elim = do
   env <- gets m_env
   it_levels <- gets m_it_levels
   case it_levels of
     it_level : _ ->
-      modify (\ind_data -> ind_data { m_dep_elim = not (is_impredicative env && prop_proof_irrel env && is_zero it_level) })
+      modify (\ind_data -> ind_data { m_dep_elim = not (is_impredicative env && is_prop_proof_irrel env && is_zero it_level) })
 
 -- Return true if type formers C in the recursors can only map to Type.{0}
 elim_only_at_universe_zero = do
@@ -357,10 +351,10 @@ elim_only_at_universe_zero = do
 elim_only_at_universe_zero_core :: ExceptT Bool AddInductiveMethod ()
 elim_only_at_universe_zero_core = do
   env <- gets m_env
-  decls <- gets m_decls
+  idecls <- gets m_idecls
   is_not_zero <- gets m_is_not_zero
   if is_impredicative env && is_not_zero then throwE False else return ()
-  case decls of
+  case idecls of
     d1:d2:_ -> throwE True
     [(InductiveDecl _ _ [])] -> throwE False
     [(InductiveDecl _ _ (_:_:_))] -> throwE True
@@ -392,8 +386,8 @@ check_condition1 ty _ = return (ty,[])
 init_elim_level = do
   only_at_zero <- elim_only_at_universe_zero
   if only_at_zero
-    then modify (\ind_data -> ind_data { m_elim_level = Just mk_level_zero })
-    else modify (\ind_data -> ind_data { m_elim_level = Just (mk_level_param (mk_special_name "elim_level")) })
+    then modify (\ind_data -> ind_data { m_elim_level = Just mk_zero })
+    else modify (\ind_data -> ind_data { m_elim_level = Just (mk_level_param (mk_system_name_s "elim_level")) })
 
 {-data ElimInfo = ElimInfo {
   m_C :: Maybe Expression, -- type former constant
@@ -403,9 +397,9 @@ init_elim_level = do
 -}
 
 init_elim_info = do
-  decls <- gets m_decls
-  mapM_ (uncurry populate_C_indices_major) (zip decls [0..])
-  mapM_ (uncurry populate_minor_premises) (zip decls [0..])
+  idecls <- gets m_idecls
+  mapM_ (uncurry populate_C_indices_major) (zip idecls [0..])
+  mapM_ (uncurry populate_minor_premises) (zip idecls [0..])
 
 populate_C_indices_major :: InductiveDecl -> Integer -> AddInductiveMethod ()
 populate_C_indices_major (InductiveDecl name ty intro_rules) d_idx = do
@@ -422,8 +416,8 @@ populate_C_indices_major (InductiveDecl name ty intro_rules) d_idx = do
   dep_elim <- gets m_dep_elim
   c_ty <- return $ if dep_elim then abstract_pi major_premise c_ty else c_ty
   c_ty <- return $ abstract_pi_seq indices c_ty
-  num_its <- liftM (genericLength . m_decls) get
-  c_name <- return $ if num_its > 1 then AppendInteger (mk_name ["C"]) d_idx else mk_name ["C"]
+  num_its <- liftM (genericLength . m_idecls) get
+  c_name <- return $ if num_its > 1 then name_append_i (mk_name ["C"]) d_idx else mk_name ["C"]
   fresh_name_C <- mk_fresh_name
   c <- return $ mk_local_data fresh_name_C c_name c_ty
   modify (\ind_data -> ind_data { m_elim_infos = (m_elim_infos ind_data) ++ [ElimInfo c indices major_premise []] })
@@ -448,7 +442,7 @@ populate_minor_premises (InductiveDecl name ty intro_rules) d_idx = do
   it_level <- liftM (flip genericIndex d_idx . m_it_levels) get
   -- A declaration is target for K-like reduction when it has one intro,
   -- the intro has 0 arguments, proof irrelevance is enabled, and it is a proposition.
-  modify (\ind_data -> ind_data { m_K_target = prop_proof_irrel env && is_zero it_level && length intro_rules == 1 })
+  modify (\ind_data -> ind_data { m_K_target = is_prop_proof_irrel env && is_zero it_level && length intro_rules == 1 })
   -- In the populate_minor_premises_intro_rule we check if the intro rule has 0 arguments.
   mapM_ (populate_minor_premises_ir d_idx) intro_rules
 
@@ -494,7 +488,7 @@ populate_minor_premises_ir d_idx (IntroRule ir_name ir_type) = do
   minor_ty <- return $ abstract_pi_seq nonrec_args
               (abstract_pi_seq rec_args
                (abstract_pi_seq ind_args c_app))
-  minor_premise <- return $ mk_local_data fresh_name_minor (AppendInteger (mk_name ["e"]) d_idx) minor_ty
+  minor_premise <- return $ mk_local_data fresh_name_minor (name_append_i (mk_name ["e"]) d_idx) minor_ty
   push_minor_premise d_idx minor_premise
 
 build_xs rec_arg_ty xs =
@@ -514,7 +508,7 @@ build_ind_args ((rec_arg,rec_arg_num):rest) = do
   c_app <- return $ if dep_elim then mk_app c_app (mk_app_seq (Local rec_arg) (map Local xs)) else c_app
   ind_arg_ty <- return $ abstract_pi_seq xs c_app
   fresh_name_ind_arg <- mk_fresh_name
-  ind_arg <- return $ mk_local_data fresh_name_ind_arg (AppendInteger (mk_name ["v"]) rec_arg_num) ind_arg_ty
+  ind_arg <- return $ mk_local_data fresh_name_ind_arg (name_append_i (mk_name ["v"]) rec_arg_num) ind_arg_ty
   return $ ind_arg:rest_ind_args
 
 {- Given t of the form (I As is) where I is one of the inductive datatypes being defined,
@@ -545,9 +539,9 @@ declare_elim_rule (InductiveDecl name ty intro_rules) d_idx = do
   -- trace "END_certify_declaration" (return ())
   update_m_env (flip env_add cdecl)
 
-get_elim_name name = AppendString name "rec"
+get_elim_name name = name_append_s name "rec"
 get_elim_name_idx it_idx = do
-  idecls <- gets m_decls
+  idecls <- gets m_idecls
   case genericIndex idecls it_idx of
     InductiveDecl name _ _ -> return $ get_elim_name name
 
@@ -579,11 +573,11 @@ get_elim_level_param_names = do
 
 -- | Create computional rules RHS. They are used by the normalizer extension.
 mk_comp_rules_rhs = do
-  idecls <- gets m_decls
+  idecls <- gets m_idecls
   elim_infos <- gets m_elim_infos
-  mapM_ (uncurry mk_comp_rules_rhs_decl) (zip idecls elim_infos)
+  mapM_ (uncurry mk_comp_rules_rhs_idecl) (zip idecls elim_infos)
 
-mk_comp_rules_rhs_decl (InductiveDecl name ty intro_rules) (ElimInfo _ indices _ minor_premises) = do
+mk_comp_rules_rhs_idecl (InductiveDecl name ty intro_rules) (ElimInfo _ indices _ minor_premises) = do
   ext_add_elim name (genericLength indices)
   mapM_ (uncurry $ register_comp_rhs name) (zip intro_rules minor_premises)
 
@@ -708,14 +702,14 @@ ext_add_inductive_info = do
   ind_data <- get
   update_m_env (ind_ext_add_inductive_info (m_level_names ind_data)
                 (m_num_params ind_data)
-                (m_decls ind_data))
+                (m_idecls ind_data))
 
 ext_add_intro_info ir_name ind_name = update_m_env $ ind_ext_add_intro_info ir_name ind_name 
 
 ext_add_elim ind_name num_indices = do
   elim_level_param_names <- get_elim_level_param_names
   ind_data <- get
-  num_cs <- liftM (genericLength . m_decls) get
+  num_cs <- liftM (genericLength . m_idecls) get
   num_minor_ps <- return $ sum $ map (genericLength . m_minor_premises) $ m_elim_infos ind_data
   update_m_env (ind_ext_add_elim
                 (get_elim_name ind_name)

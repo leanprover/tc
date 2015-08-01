@@ -1,23 +1,24 @@
-{-
-Copyright (c) 2015 Daniel Selsam.
+{-|
+Module      : Environment
+Description : Environments
+Copyright   : (c) Daniel Selsam, 2015
+License     : GPL-3
+Maintainer  : daniel.selsam@gmail.com
 
-This file is part of the Lean reference type checker.
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+Environments
 -}
 
-module Environment where
+module Environment (Declaration (..),Environment (..),CertifiedDeclaration (..),
+                    mk_definition,mk_axiom,is_definition,
+                    is_impredicative, is_prop_proof_irrel,
+                    lookup_declaration, empty_environment, env_add,env_add_uni,
+                    IntroRule (..),InductiveDecl (..),ExtElimInfo (..),CompRule (..),
+                    MutualInductiveDecl (..),InductiveEnvExt (..),
+                    default_inductive_env_ext,
+                    ind_ext_add_inductive_info,ind_ext_add_intro_info,
+                    ind_ext_add_elim, ind_ext_add_comp_rhs
+                   )
+where
 
 import Name
 import Level
@@ -31,16 +32,13 @@ import Data.Set (Set)
 
 import qualified Data.Maybe as Maybe
 
-
--- Declarations
-
 data Declaration = Declaration { decl_name :: Name,
                                  decl_level_names :: [Name],
                                  decl_type :: Expression,
                                  decl_mb_val :: Maybe Expression,
                                  decl_weight :: Integer } deriving (Eq,Show)
 
--- The `env` args are used to compute the declaration weights
+-- | Note: the `env` args are used to compute the declaration weights
 mk_definition env name level_param_names t v =
   Declaration name level_param_names t (Just v) (1 + get_max_decl_weight env v)
 
@@ -49,7 +47,6 @@ mk_axiom name level_param_names t =
 
 is_definition decl = Maybe.isJust (decl_mb_val decl)
 
--- TODO not that ugly but could use a more generic fold operation
 get_max_decl_weight env e = case e of
   Var var -> 0
   Local local -> get_max_decl_weight env (local_type local)
@@ -61,38 +58,28 @@ get_max_decl_weight env e = case e of
 
 -- Environments
 
-data EnvironmentHeader = EnvironmentHeader {
-  eh_prop_proof_irrel :: Bool,
-  eh_eta :: Bool,
-  eh_impredicative :: Bool
-  } deriving (Show)
-  
 data Environment = Environment {
-  env_header :: EnvironmentHeader ,
   env_declarations :: Map Name Declaration,
   env_global_names :: Set Name,
   env_ind_ext :: InductiveEnvExt,
   env_quot_enabled :: Bool
   } deriving (Show)
                    
-  
-
 data CertifiedDeclaration = CertifiedDeclaration { cdecl_env :: Environment, cdecl_decl :: Declaration } deriving (Show)
 
 is_impredicative :: Environment -> Bool
 is_impredicative env = True -- TODO
 
-prop_proof_irrel :: Environment -> Bool
-prop_proof_irrel env = True -- TODO
+is_prop_proof_irrel :: Environment -> Bool
+is_prop_proof_irrel env = True -- TODO
 
 lookup_declaration :: Environment -> Name -> Maybe Declaration
 lookup_declaration env name = Map.lookup name (env_declarations env)
 
-is_opaque decl = False
-
-default_env_header = EnvironmentHeader { eh_prop_proof_irrel = True, eh_eta = True, eh_impredicative = True }
-empty_environment = Environment { env_header = default_env_header, env_declarations = Map.empty,
-                                  env_global_names = Set.empty, env_ind_ext = default_inductive_env_ext, env_quot_enabled = True }
+empty_environment = Environment { env_declarations = Map.empty,
+                                  env_global_names = Set.empty,
+                                  env_ind_ext = default_inductive_env_ext,
+                                  env_quot_enabled = True }
 
 -- TODO confirm environment is a descendent of the current one
 -- or maybe make the kernel responsible for adding it
@@ -107,38 +94,29 @@ env_add_uni env name = case Set.member name (env_global_names env) of
   False -> env { env_global_names = Set.insert name (env_global_names env) }
   True -> error "Already defined global universe, but interpreter should have caught this already, will refactor later"
 
-
-{- Extensions -}
+{- Inductive extensions -}
 
 data IntroRule = IntroRule Name Expression deriving (Show)
 data InductiveDecl = InductiveDecl Name Expression [IntroRule] deriving (Show)
 
-
+-- | Information used by the inductive normalizer extension
 data ExtElimInfo = ExtElimInfo {
-  eei_inductive_name :: Name, -- name of the inductive datatype associated with eliminator
-  eei_level_param_names :: [Name], -- level parameter names used in computational rule
-  eei_num_params :: Integer, -- number of global parameters A
-  eei_num_ACe :: Integer, -- sum of number of global parameters A, type formers C, and minor preimises e.
-  eei_num_indices :: Integer, -- number of inductive datatype indices
-  {- We support K-like reduction when the inductive datatype is in Type.{0} (aka Prop), proof irrelevance is enabled, it has only one introduction rule, the introduction rule has "0 arguments".
-            Example: equality defined as
-
-            inductive eq {A : Type} (a : A) : A -> Prop :=
-            refl : eq a a
-
-            satisfies these requirements when proof irrelevance is enabled.
-            Another example is heterogeneous equality.
--}
+  eei_inductive_name :: Name, -- ^ name of the inductive datatype associated with eliminator
+  eei_level_param_names :: [Name], -- ^ level parameter names used in computational rule
+  eei_num_params :: Integer, -- ^ number of global parameters A
+  eei_num_ACe :: Integer, -- ^ sum of number of global parameters A, type formers C, and minor preimises e.
+  eei_num_indices :: Integer, -- ^ number of inductive datatype indices
+  -- | We support K-like reduction when the inductive datatype is in Type.{0} (aka Prop), proof irrelevance is enabled,
+  -- it has only one introduction rule, the introduction rule has "0 arguments".
   eei_K_target :: Bool,
-  eei_dep_elim :: Bool -- m_dep_elim == true, if dependent elimination is used for this eliminator */
+  eei_dep_elim :: Bool -- ^ eei_dep_elim == true if dependent elimination is used for this eliminator
   } deriving (Show)
 
-mk_ext_elim_info = ExtElimInfo
-
+-- | Represents a single com
 data CompRule = CompRule {
-  cr_elim_name :: Name, -- name of the corresponding eliminator
-  cr_num_rec_nonrec_args :: Integer, -- sum of number of rec_args and nonrec_args in the corresponding introduction rule.
-  cr_comp_rhs :: Expression -- computational rule RHS: Fun (A, C, e, b, u), (e_k_i b u v)
+  cr_elim_name :: Name, -- ^ name of the corresponding eliminator
+  cr_num_rec_nonrec_args :: Integer, -- ^ sum of number of rec_args and nonrec_args in the corresponding introduction rule.
+  cr_comp_rhs :: Expression -- ^ computational rule RHS: Fun (A, C, e, b, u), (e_k_i b u v)
   } deriving (Show)
 
 data MutualInductiveDecl = MutualInductiveDecl {
@@ -187,4 +165,3 @@ ind_ext_add_comp_rhs ir_name elim_name num_rec_args_nonrec_args rhs env =
       new_comp_rule = CompRule elim_name num_rec_args_nonrec_args rhs
   in
    env { env_ind_ext = old_env_ind_ext { iext_comp_rules = Map.insert ir_name new_comp_rule old_m } }
-
