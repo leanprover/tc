@@ -12,8 +12,8 @@ The code follows the design of the Lean kernel closely, except can be made simpl
 
 ### Todo
 
-1. Setup cabal
-2. Control module exports
-3. Setup haddock for building documentation
+1. Setup haddock with cabal for building documentation
+2. Add section headers to organize haddock documentation
+3. Setup doctest and hspec with cabal
 4. Write many more tests
 5. Write extensive tutorial-level comments (possibly in Literate Haskell)
