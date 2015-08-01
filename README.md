@@ -12,11 +12,8 @@ The code follows the design of the Lean kernel closely, except can be made simpl
 
 ### Todo
 
-1. Start using a mature test framework (HTF)
-2. Either write a battery of tests, or support a Lua interface so the existing tests for Lean can run on this project.
-3. Setup cabal
-4. Add support for inductive types
-5. Add support for quotients
-6. Write extensive tutorial-level comments in Literate Haskell
-7. Parse the export files
-8. Optimize until performance is adequate
+1. Setup cabal
+2. Control module exports
+3. Setup haddock for building documentation
+4. Write many more tests
+5. Write extensive tutorial-level comments (possibly in Literate Haskell)
