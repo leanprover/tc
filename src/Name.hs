@@ -28,10 +28,10 @@ no_name = Anonymous
 name_append_i = AppendInteger
 name_append_s = AppendString
 
-mk_name :: [String] -> Name
 -- | Make a name from a list of strings.
 --
 -- >>> mk_name ["foo","bar"]
 -- .bar.foo
+mk_name :: [String] -> Name
 mk_name [n] = AppendString Anonymous n
 mk_name (n:ns) = AppendString (mk_name ns) n

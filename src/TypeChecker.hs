@@ -82,19 +82,13 @@ check_main d = do
   maybe (return ()) check_no_local (decl_mb_val d)
   check_name (decl_name d)
   check_duplicated_params
-  -- trace "about to check type" (return ())
   sort <- infer_type (decl_type d)
-  -- trace "about to ensure sort" (return ())  
   ensure_sort sort
-  -- trace "about to check val" (return ())
   maybe (return ()) (check_val_matches_ty (decl_type d)) (decl_mb_val d)
-  -- trace "done" (return ())  
   return $ mk_certified_declaration (tc_env tc) d
 
 ------
 
---run_TCMethod tcm = evalStateT tcm
-  
 tc_assert b err = if b then return () else throwE err
 
 check_no_local e = tc_assert (not $ has_local e) (DefHasLocals e)
@@ -203,7 +197,6 @@ infer_app app = do
 
 whnf :: Expression -> TCMethod Expression
 whnf e = do
-  -- trace ("whnf (" ++ show e ++ ")\n") (return ())
   e1 <- whnf_core_delta 0 e
   mb_e2 <- normalize_ext e1
   case mb_e2 of
@@ -233,32 +226,26 @@ unfold_names w e = case e of
              in unfold_name_core w op >>= return . flip mk_app_seq args
   _ -> unfold_name_core w e
 
--- Why am I not finding ".not"?
 unfold_name_core :: Integer -> Expression -> TCMethod Expression
 unfold_name_core w e = case e of
   Constant const -> do
-    -- trace ("unfold_name_core (" ++ (show const) ++ ")\n") (return ())
     tc <- get
-    maybe (trace "NOT FOUND" $ return e) -- DEL-CAREFUL
+    maybe (return e)
       (\d -> case decl_mb_val d of
           Just decl_val
             | decl_weight d >= w && length (const_levels const) == length (decl_level_names d)
               -> unfold_name_core w (instantiate_univ_params decl_val (decl_level_names d) $ const_levels const)
-          _ -> do
-            -- trace ("NO VALUE: {name= " ++ show (decl_name d) ++ " , weight= " ++ show (decl_weight d) ++ "(" ++ show w ++ ") }\n") (return ())
-            return e)
+          _ -> return e)
       (lookup_declaration (tc_env tc) (const_name const))
   _ -> return e
 
 normalize_ext :: Expression -> TCMethod (Maybe Expression)
 normalize_ext e = runMaybeT (inductive_norm_ext e `mplus` quotient_norm_ext e)
 
-
 -- is_def_eq
 
 is_def_eq :: Expression -> Expression -> TCMethod Bool
 is_def_eq t s = do
---  trace ("<is_def_eq>\n\n" ++ show t ++ "\n\n" ++ show s ++ "\n\n\n") (return ())
   success <- runExceptT (is_def_eq_main t s)
   case success of
     Left answer -> return answer
@@ -286,24 +273,14 @@ deq_try_or (def_eq:def_eqs) = do
     Left True -> throwE True
     _ -> deq_try_or def_eqs
 
-{-
-deq_true_as_continue :: DefEqMethod () -> DefEqMethod ()
-deq_true_as_continue def_eq = do
-  success <- lift $ runExceptT def_eq
-  case success of
-    Left True -> return ()
-    _ -> throwE False
--}
-
 -- This exception means we know if they are equal or not
 type DefEqMethod = ExceptT Bool TCMethod
 
--- deq_fail = lift . tc_fail
 deq_assert b err = lift $ tc_assert b err
 
--- | 'try_if b check' tries 'check' only if 'b' is true, otherwise does nothing.
-try_if :: Bool -> DefEqMethod () -> DefEqMethod ()
-try_if b check = if b then check else return ()
+-- | 'deq_try_if b check' tries 'check' only if 'b' is true, otherwise does nothing.
+deq_try_if :: Bool -> DefEqMethod () -> DefEqMethod ()
+deq_try_if b check = if b then check else return ()
 
 -- | Wrapper to add successes to the cache
 is_def_eq_main :: Expression -> Expression -> DefEqMethod ()
@@ -319,7 +296,7 @@ is_def_eq_core t s = do
   quick_is_def_eq t s
   t_n <- lift $ whnf_core t
   s_n <- lift $ whnf_core s
-  try_if (t_n /= t || s_n /= s) (quick_is_def_eq t_n s_n)
+  deq_try_if (t_n /= t || s_n /= s) $ quick_is_def_eq t_n s_n
   (t_n,s_n) <- reduce_def_eq t_n s_n
 
   case (t_n,s_n) of
@@ -331,7 +308,8 @@ is_def_eq_core t s = do
     _ -> return ()
 
   is_eq_eta_expansion t_n s_n
-  is_def_proof_irrel t_n s_n
+  gets tc_env >>= (\env -> deq_try_if (is_prop_proof_irrel env) $ is_def_proof_irrel t_n s_n)
+  
 
 reduce_def_eq :: Expression -> Expression -> DefEqMethod (Expression,Expression)
 reduce_def_eq t s = do
@@ -450,13 +428,12 @@ is_prop e = do
   e_ty_whnf <- whnf e_ty
   return $ if e_ty_whnf == mk_Prop then True else False
 
--- TODO query environment to see if proof irrelevance is enabled
 is_def_proof_irrel :: Expression -> Expression -> DefEqMethod ()
 is_def_proof_irrel t s = do
   t_ty <- lift $ infer_type t
   s_ty <- lift $ infer_type s
   t_ty_is_prop <- lift $ is_prop t_ty
-  try_if t_ty_is_prop (is_def_eq_main t_ty s_ty)
+  deq_try_if t_ty_is_prop $ is_def_eq_main t_ty s_ty
 
 quick_is_def_eq :: Expression -> Expression -> DefEqMethod ()
 quick_is_def_eq t s = do

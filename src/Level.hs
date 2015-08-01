@@ -217,7 +217,6 @@ normalize_level l = let p = to_offset l in case fst p of
   Max max ->
     let max_args = (sortBy level_norm_cmp) . concat . (map (collect_max_args . normalize_level)) $ collect_max_args (Max max)
         explicit = remove_small_explicits $ filter is_explicit max_args
-        -- TODO confirm that I don't need to check that the offsets are ordered here (Leo does for some reason)        
         non_explicits = let rest = filter (not . is_explicit) max_args
                             (but_last,last) = foldl (\ (keep,prev) curr ->
                                                       if fst (to_offset prev) == fst (to_offset curr)
@@ -263,44 +262,41 @@ replace_in_level f l =
         LevelParam param -> l
         GlobalLevel global -> l
 
-instantiate_level_fn :: [Name] -> [Level] -> LevelReplaceFn
-instantiate_level_fn level_param_names levels level
-  | not (genericLength level_param_names == genericLength levels) = error "Wrong number of level params"
-  | not (has_param level) = Just level
-
-instantiate_level_fn level_param_names levels (LevelParam name) =
-  case elemIndex name level_param_names of
-    Nothing -> Nothing
-    Just idx -> Just (levels!!idx)
-
-instantiate_level_fn _ _ _ = Nothing
 
 instantiate_level :: [Name] -> [Level] -> Level -> Level
 instantiate_level level_param_names levels level =
   replace_in_level (instantiate_level_fn level_param_names levels) level
+  where
+    instantiate_level_fn :: [Name] -> [Level] -> LevelReplaceFn
+    instantiate_level_fn level_param_names levels level
+      | not (genericLength level_param_names == genericLength levels) = error "Wrong number of level params"
+      | not (has_param level) = Just level
+
+    instantiate_level_fn level_param_names levels (LevelParam name) =
+      case elemIndex name level_param_names of
+        Nothing -> Nothing
+        Just idx -> Just (levels!!idx)
+
+    instantiate_level_fn _ _ _ = Nothing
+
 
 -- Order
 
--- TODO [level_leq_core] was rushed, need to test carefully
-level_leq l1 l2 = level_leq_core (normalize_level l1) (normalize_level l2)
-level_leq_core l1 l2
-  | l1 == l2 || is_zero l1 = True
+level_leq l1 l2 = level_leq_core (normalize_level l1) (normalize_level l2) where
+  level_leq_core l1 l2
+    | l1 == l2 || is_zero l1 = True
 
-level_leq_core (Max max) l2 = level_leq (max_lhs max) l2 && level_leq (max_rhs max) l2
-level_leq_core l1 (Max max)
-  | level_leq l1 (max_lhs max) || level_leq l1 (max_rhs max) = True
+  level_leq_core (Max max) l2 = level_leq (max_lhs max) l2 && level_leq (max_rhs max) l2
+  level_leq_core l1 (Max max)
+    | level_leq l1 (max_lhs max) || level_leq l1 (max_rhs max) = True
                                                                
-level_leq_core (IMax imax) l2 = level_leq (max_lhs imax) l2 && level_leq (max_rhs imax) l2
-level_leq_core l1 (IMax imax) = level_leq l1 (max_rhs imax)
+  level_leq_core (IMax imax) l2 = level_leq (max_lhs imax) l2 && level_leq (max_rhs imax) l2
+  level_leq_core l1 (IMax imax) = level_leq l1 (max_rhs imax)
 
-level_leq_core l1 l2 =
-  let (l1',k1) = to_offset l1
-      (l2',k2) = to_offset l2
-  in
-   if l1' == l2' || is_zero l1' then k1 <= k2 else
-     if k1 == k2 && k1 > 0 then level_leq l1' l2' else
-       False
-
-
---instance Ord Level where
---  (<=) = level_leq
+  level_leq_core l1 l2 =
+    let (l1',k1) = to_offset l1
+        (l2',k2) = to_offset l2
+    in
+     if l1' == l2' || is_zero l1' then k1 <= k2 else
+       if k1 == k2 && k1 > 0 then level_leq l1' l2' else
+         False

@@ -112,7 +112,7 @@ data ExtElimInfo = ExtElimInfo {
   eei_dep_elim :: Bool -- ^ eei_dep_elim == true if dependent elimination is used for this eliminator
   } deriving (Show)
 
--- | Represents a single com
+-- | Represents a single computation rule
 data CompRule = CompRule {
   cr_elim_name :: Name, -- ^ name of the corresponding eliminator
   cr_num_rec_nonrec_args :: Integer, -- ^ sum of number of rec_args and nonrec_args in the corresponding introduction rule.
@@ -134,7 +134,6 @@ data InductiveEnvExt = InductiveEnvExt {
 
 default_inductive_env_ext = InductiveEnvExt Map.empty Map.empty Map.empty Map.empty
 
--- Painful without Lens
 -- | map every inductive type name to the mutually inductive declaration
 ind_ext_add_inductive_info level_param_names num_params idecls env =
   let old_env_ind_ext = env_ind_ext env

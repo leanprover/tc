@@ -76,7 +76,7 @@ show_expression e = case e of
   Var var -> "#" ++ show (var_idx var)
   Local local -> show local
   Sort sort -> "(Sort: " ++ show (sort_level sort) ++ ")"
-  Constant const -> "'" ++ show (const_name const) ++ " " ++ show (const_levels const) ++ "'" -- "(Constant: " ++ show (const_name const) ++ ")"
+  Constant const -> "'" ++ show (const_name const) ++ " " ++ show (const_levels const) ++ "'"
   Lambda lam -> "(Lambda: " ++ show (binding_domain lam) ++ " ==> " ++ show (binding_body lam) ++ ")"
   Pi pi -> "(Pi: " ++ show (binding_domain pi) ++ " -> " ++ show (binding_body pi) ++ ")"
   App app -> let (f,args) = (get_operator e,get_app_args e) in "(App: " ++ show f ++ " @ " ++ show args ++ ")"
@@ -189,41 +189,40 @@ mk_local name pp_name ty binfo = Local $ mk_local_data_full name pp_name ty binf
 -- Replace
 type Offset = Integer
 type ReplaceFn = (Expression -> Offset -> Maybe Expression)
+
 replace_in_expr :: ReplaceFn -> Expression -> Expression
 replace_in_expr f t = replace_in_expr_core f t 0
-
-replace_in_expr_core :: ReplaceFn -> Expression -> Offset -> Expression
-replace_in_expr_core f t offset =
-  case f t offset of
-    Just t0 -> t0
-    Nothing ->
-      case t of
-        Local local -> update_local_type local (replace_in_expr_core f (local_type local) offset)
-        App app -> update_app app (replace_in_expr_core f (app_fn app) offset)
-                   (replace_in_expr_core f (app_arg app) offset)
-        Lambda lam -> update_binding lam (replace_in_expr_core f (binding_domain lam) offset)
-                      (replace_in_expr_core f (binding_body lam) (1+offset))
-        Pi pi -> update_binding pi (replace_in_expr_core f (binding_domain pi) offset)
-                      (replace_in_expr_core f (binding_body pi) (1+offset))
-        _ -> t
-
--- ForEach
+  where
+    replace_in_expr_core :: ReplaceFn -> Expression -> Offset -> Expression
+    replace_in_expr_core f t offset =
+      case f t offset of
+        Just t0 -> t0
+        Nothing ->
+          case t of
+            Local local -> update_local_type local (replace_in_expr_core f (local_type local) offset)
+            App app -> update_app app (replace_in_expr_core f (app_fn app) offset)
+                       (replace_in_expr_core f (app_arg app) offset)
+            Lambda lam -> update_binding lam (replace_in_expr_core f (binding_domain lam) offset)
+                          (replace_in_expr_core f (binding_body lam) (1+offset))
+            Pi pi -> update_binding pi (replace_in_expr_core f (binding_domain pi) offset)
+                     (replace_in_expr_core f (binding_body pi) (1+offset))
+            _ -> t
 
         
 -- Find
 type FindFn = (Expression -> Offset -> Bool)
 find_in_expr :: FindFn -> Expression -> Maybe Expression
 find_in_expr f t = find_in_expr_core f t 0
-
-find_in_expr_core :: FindFn -> Expression -> Offset -> Maybe Expression
-find_in_expr_core f t offset =
-  if f t offset then Just t else
-    case t of
-      Local local -> find_in_expr_core f (local_type local) offset
-      App app -> find_in_expr_core f (app_fn app) offset `mplus` find_in_expr_core f (app_arg app) offset
-      Lambda lam -> find_in_expr_core f (binding_domain lam) offset `mplus` find_in_expr_core f (binding_body lam) (offset+1)
-      Pi pi -> find_in_expr_core f (binding_domain pi) offset `mplus` find_in_expr_core f (binding_body pi) (offset+1)
-      _ -> Nothing
+  where
+    find_in_expr_core :: FindFn -> Expression -> Offset -> Maybe Expression
+    find_in_expr_core f t offset =
+      if f t offset then Just t else
+        case t of
+          Local local -> find_in_expr_core f (local_type local) offset
+          App app -> find_in_expr_core f (app_fn app) offset `mplus` find_in_expr_core f (app_arg app) offset
+          Lambda lam -> find_in_expr_core f (binding_domain lam) offset `mplus` find_in_expr_core f (binding_body lam) (offset+1)
+          Pi pi -> find_in_expr_core f (binding_domain pi) offset `mplus` find_in_expr_core f (binding_body pi) (offset+1)
+          _ -> Nothing
 
 -- Instantiate
 
@@ -240,34 +239,35 @@ instantiate e subst = instantiate_seq e [subst]
 
 -- Lift free vars
 
-lift_free_vars_fn :: Offset -> ReplaceFn
-lift_free_vars_fn shift e offset
-  | offset >= get_free_var_range e = Just e
-
-lift_free_vars_fn shift (Var var) offset
-  | var_idx var >= offset = Just $ mk_var (var_idx var + shift)
-
-lift_free_vars_fn _ _ _ = Nothing
-
 lift_free_vars e shift = replace_in_expr (lift_free_vars_fn shift) e
+  where
+    lift_free_vars_fn :: Offset -> ReplaceFn
+    lift_free_vars_fn shift e offset
+      | offset >= get_free_var_range e = Just e
+
+    lift_free_vars_fn shift (Var var) offset
+      | var_idx var >= offset = Just $ mk_var (var_idx var + shift)
+
+    lift_free_vars_fn _ _ _ = Nothing
+
 
 -- Instantiate universe params
-instantiate_univ_params_fn :: [Name] -> [Level] -> ReplaceFn
-instantiate_univ_params_fn level_param_names levels e _
-  | not (expr_has_param_univ e) = Just e
-
-instantiate_univ_params_fn level_param_names levels (Constant const) _ =
-  Just $ update_constant const (map (instantiate_level level_param_names levels) (const_levels const))
-
-instantiate_univ_params_fn level_param_names levels (Sort sort) _ =
-  Just $ update_sort sort (instantiate_level level_param_names levels (sort_level sort))
-
-instantiate_univ_params_fn _ _ _ _ = Nothing
 
 instantiate_univ_params e level_names levels =
-  let ret = replace_in_expr (instantiate_univ_params_fn level_names levels) e in
-  -- trace ("instantiate\n\n" ++ show e ++ "\n\n" ++ show level_names ++ "\n\n" ++ show levels ++ "\n\n" ++ show ret ++ "\n\n\n")
-  ret
+  replace_in_expr (instantiate_univ_params_fn level_names levels) e
+  where
+    instantiate_univ_params_fn :: [Name] -> [Level] -> ReplaceFn
+    instantiate_univ_params_fn level_param_names levels e _
+      | not (expr_has_param_univ e) = Just e
+
+    instantiate_univ_params_fn level_param_names levels (Constant const) _ =
+      Just $ update_constant const (map (instantiate_level level_param_names levels) (const_levels const))
+
+    instantiate_univ_params_fn level_param_names levels (Sort sort) _ =
+      Just $ update_sort sort (instantiate_level level_param_names levels (sort_level sort))
+
+    instantiate_univ_params_fn _ _ _ _ = Nothing
+
 
 
 -- Abstract locals
@@ -285,22 +285,23 @@ abstract_binding_seq is_pi locals body =
    foldr (\(abstract_type,local) new_body -> mk_binding is_pi (local_name local) abstract_type new_body (local_info local))
    abstract_body (zip abstract_types locals)
 
-{- TODO use = go expr where ... -} 
-abstract_locals_fn :: [LocalData] -> ReplaceFn
-abstract_locals_fn locals e offset
-  | not (has_local e) = Just e
+{- TODO use = go expr where ... -}
 
-abstract_locals_fn locals e@(Local l) offset =
-  case findIndex (\local -> local_name local == local_name l) locals of
-    Nothing -> Just e
-    Just idx -> Just (mk_var $ offset + (toInteger (length locals - 1 - idx)))
-
-abstract_locals_fn _ _  _ = Nothing
-                            
 abstract_locals locals body = replace_in_expr (abstract_locals_fn locals) body
+  where
+    abstract_locals_fn :: [LocalData] -> ReplaceFn
+    abstract_locals_fn locals e offset
+      | not (has_local e) = Just e
+
+    abstract_locals_fn locals e@(Local l) offset =
+      case findIndex (\local -> local_name local == local_name l) locals of
+        Nothing -> Just e
+        Just idx -> Just (mk_var $ offset + (toInteger (length locals - 1 - idx)))
+
+    abstract_locals_fn _ _  _ = Nothing
+                            
 
 -- Updaters
--- TODO check equality first
 
 update_local_type :: LocalData -> Expression -> Expression
 update_local_type local new_type = mk_local (local_name local) (local_pp_name local) new_type (local_info local)
@@ -314,6 +315,8 @@ update_app app new_fn new_arg = mk_app new_fn new_arg
 
 update_constant const levels = mk_constant (const_name const) levels
 update_sort sort level = mk_sort level
+
+-- Misc
 
 body_of_lambda e = case e of
   Lambda lam -> body_of_lambda (binding_body lam)

@@ -57,8 +57,6 @@ data InductiveDeclError = NoInductiveTypeDecls
 
 -- Will be used for State monad
 -- TODO split into State/Reader?
--- Note: Maybe a placeholder until we fill in the slot
--- (will probably assume `Just` once we set it)
 data ElimInfo = ElimInfo {
   m_C :: LocalData, -- type former constant
   m_indices :: [LocalData], --local constant for each index
@@ -94,7 +92,7 @@ mk_add_inductive_data env level_names num_params idecls = AddInductiveData {
   m_idecls = idecls,
   m_is_not_zero = False,
   m_levels = map LevelParam level_names,
-  m_next_id = 0, -- TODO
+  m_next_id = 0,
   m_elim_level = Nothing,
   m_dep_elim = False,
   m_param_consts = [],
@@ -189,13 +187,11 @@ check_inductive_idecl_core first i name ty = do
             modify (\ind_data -> ind_data { m_it_levels = m_it_levels ind_data ++ [sort_level sort] })
             modify (\ind_data -> ind_data { m_it_consts = m_it_consts ind_data ++ [ConstantData name (m_levels ind_data)] })
 
--- Needs to check whether env is impredicative
 handle_impredicative_env :: Bool -> SortData -> AddInductiveMethod ()
 handle_impredicative_env True sort = modify (\ind_data -> ind_data { m_is_not_zero = is_definitely_not_zero (sort_level sort) })
 handle_impredicative_env False sort = do
   is_not_zero <- gets m_is_not_zero
   ind_assert (is_definitely_not_zero (sort_level sort) == is_not_zero) OneInPropAllInProp 
-
 
 -- Add all datatype declarations to environment.
 declare_inductive_types :: AddInductiveMethod ()
@@ -204,7 +200,6 @@ declare_inductive_types = do
                              cdecl <- certify_ideclaration idecl
                              update_m_env (flip env_add cdecl))
   ext_add_inductive_info
-  
 
 
 {- Check if
@@ -215,7 +210,6 @@ declare_inductive_types = do
 
    Note: this method must be executed after declare_inductive_types
 -}
-
 check_intro_rules :: AddInductiveMethod ()
 check_intro_rules = gets m_idecls >>= check_intro_rules_core 0
 
@@ -270,9 +264,7 @@ check_positivity ty name param_num = do
       Pi pi -> do it_occ <- has_it_occ (binding_domain pi)
                   ind_assert (not it_occ) (NonPosOccurrence param_num name)
                   check_positivity (binding_body pi) name param_num
-      _ -> do
-        -- trace ("check_positivity_body: " ++ show ty) (return ())
-        is_valid_it_app ty >>= flip ind_assert (NonValidOccurrence param_num name)
+      _ -> is_valid_it_app ty >>= flip ind_assert (NonValidOccurrence param_num name)
 
 -- Return true if ty does not contain any occurrence of a datatype being declared.
 has_it_occ ty = do
@@ -326,7 +318,6 @@ declare_intro_rules =
                       level_names <- gets m_level_names
                       cdecl <- certify_declaration ir_name level_names ty
                       update_m_env (flip env_add cdecl)
-                      -- trace ("(" ++ show ir_name ++ "): " ++ show ty) (return ())
                       ext_add_intro_info ir_name it_name)
               intro_rules)
 
@@ -392,13 +383,6 @@ init_elim_level = do
   if only_at_zero
     then modify (\ind_data -> ind_data { m_elim_level = Just mk_zero })
     else modify (\ind_data -> ind_data { m_elim_level = Just (mk_level_param (mk_system_name_s "elim_level")) })
-
-{-data ElimInfo = ElimInfo {
-  m_C :: Maybe Expression, -- type former constant
-  m_indices :: [Expression], --local constant for each index
-  m_major_premise :: Maybe Expression, -- major premise for each inductive decl
-  m_minor_premises :: [Expression], -- minor premise for each introduction rule
--}
 
 init_elim_info = do
   idecls <- gets m_idecls
@@ -484,9 +468,6 @@ populate_minor_premises_ir d_idx (IntroRule ir_name ir_type) = do
   -- populate ind_args given rec_args
   -- we have one ind_arg for each rec_arg
   -- whenever we take an argument of the form (Pi other_type ind_type), we get to assume `C` holds for every possible output
-  {- inductive blah := intro : bool -> (unit → blah) → blah
-        blah.rec : Π {C : blah → Type},
-          (Π (a : bool) (a_1 : unit → blah), (Π (a : unit), C (a_1 a)) → C (blah.intro a a_1)) → (Π (n : blah), C n) -}
   ind_args <- build_ind_args (zip rec_args [0..])
   fresh_name_minor <- mk_fresh_name      
   minor_ty <- return $ abstract_pi_seq nonrec_args
@@ -524,7 +505,6 @@ get_I_indices rec_arg_ty = do
   case maybe_it_idx of
     Just d_idx -> return (d_idx,genericDrop num_params (get_app_args rec_arg_ty))
 
--- TODO will need locals
 declare_elim_rule (InductiveDecl name ty intro_rules) d_idx = do
   elim_info <- liftM (flip genericIndex d_idx . m_elim_infos) get
   c_app <- return $ mk_app_seq (Local $ m_C elim_info) (map Local $ m_indices elim_info)
@@ -532,15 +512,12 @@ declare_elim_rule (InductiveDecl name ty intro_rules) d_idx = do
   c_app <- return $ if dep_elim then mk_app c_app (Local $ m_major_premise elim_info) else c_app
   elim_type <- return $ abstract_pi (m_major_premise elim_info) c_app
   elim_type <- return $ abstract_pi_seq (m_indices elim_info) elim_type
-  -- abstract all introduction rules
   elim_type <- abstract_all_introduction_rules elim_type
   elim_type <- abstract_all_type_formers elim_type
   param_consts <- gets m_param_consts
   elim_type <- return $ abstract_pi_seq param_consts elim_type
   level_names <- get_elim_level_param_names
-  -- trace (show name ++ ".rec [" ++ show level_names ++ "]: " ++ show elim_type) (return ())
   cdecl <- certify_declaration (get_elim_name name) level_names elim_type
-  -- trace "END_certify_declaration" (return ())
   update_m_env (flip env_add cdecl)
 
 get_elim_name name = name_append_s name "rec"
@@ -601,7 +578,6 @@ register_comp_rhs ind_name (IntroRule ir_name ir_type) minor_premise = do
                  (abstract_lambda_seq rec_args e_app))))
   level_param_names <- get_elim_level_param_names
   check_type comp_rhs level_param_names
---  trace ("\ncomp_rhs: " ++ show comp_rhs ++ "\n") (return ())
   ext_add_comp_rhs ir_name (get_elim_name ind_name) (genericLength rec_args + genericLength nonrec_args) comp_rhs
 
 build_e_app [] = return []
@@ -622,7 +598,7 @@ build_e_app (rec_arg:rest) = do
                  (mk_app_seq elim_app (map Local param_consts))
                  (map (Local . m_C) elim_infos))
                 (map Local . concat $ map m_minor_premises elim_infos))
-               it_indices) -- TODO map Local?
+               it_indices)
               (mk_app_seq (Local rec_arg) (map Local xs))
   return $ (abstract_lambda_seq xs elim_app):rest_rhs
 
@@ -680,9 +656,6 @@ whnf e = do
   case TypeChecker.tc_eval env level_names next_id (TypeChecker.whnf e) of
     Left tc_err -> throwE $ TypeCheckError tc_err "whnf"
     Right (e,next) -> modify (\tc -> tc { m_next_id = next }) >> return e
-
-
--- TODO whnf that takes env and level names as arguments
 
 
 -- Other helpers
