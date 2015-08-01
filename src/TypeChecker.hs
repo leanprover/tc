@@ -47,9 +47,7 @@ data TypeError = UndefGlobalUniv Name
                | DuplicateParam
                | ConstNotFound ConstantData
                | WrongNumUnivParams Name [Name] [Level]
-               | KernelError
-               | NYI
-                 deriving (Eq,Show)
+               deriving (Eq,Show)
 
 data TypeChecker = TypeChecker {
   tc_env :: Environment ,
