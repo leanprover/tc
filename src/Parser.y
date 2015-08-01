@@ -113,7 +113,7 @@ data IDecl = IDecl Integer Integer [IIntro] deriving (Show)
 data IIntro = IIntro Integer Integer deriving (Show)
 
 parseError :: [Token] -> a
-parseError tokens = error $ "ERROR: " ++ show tokens
+parseError tokens = error $ "parse error"
 
 lexStatement :: String -> [Token]
 lexStatement [] = []
