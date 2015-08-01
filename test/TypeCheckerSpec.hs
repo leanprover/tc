@@ -46,13 +46,85 @@ infer_const1 =
             Right e -> e `shouldBe` ax_type
 
 
+hpass = return ()
+hfail = True `shouldBe` False
 
-              
-
-
-
+trigger_exceptions = describe "TypeChecker exceptions" $ do
+  it "UndefGlobalUniv" $ do
+    let n = mk_name ["undef"]
+        uni = mk_global_univ n
+        d = mk_axiom no_name [] (mk_sort uni) in
+      case check empty_environment d of
+        Left err -> err `shouldBe` (UndefGlobalUniv n)
+  it "UndefLevelParam" $ do
+    let n = mk_name ["undef"]
+        lp = mk_level_param n
+        d = mk_axiom no_name [] (mk_sort lp) in
+      case check empty_environment d of
+        Left err -> err `shouldBe` (UndefLevelParam n)
+  it "TypeExpected" $ do
+    let e = mk_lambda_anon mk_Prop mk_Prop
+        t = mk_pi_anon mk_Prop mk_Type
+        d = mk_axiom no_name [] e in
+      case check empty_environment d of
+        Left (TypeExpected _) -> hpass
+        _ -> hfail
+  it "FunctionExpected" $ do
+    let d = mk_axiom no_name [] (mk_app mk_Prop mk_Prop) in
+      case check empty_environment d of
+        Left (FunctionExpected _) -> hpass
+        _ -> hfail
+  it "TypeMismatchAtApp" $ do
+    let e = mk_app (mk_lambda_anon mk_Prop mk_Prop) mk_Prop
+        d = mk_axiom no_name [] e in
+      case check empty_environment d of
+        Left (TypeMismatchAtApp _ _) -> hpass
+        _ -> hfail
+  it "TypeMismatchAtDef" $ do
+    let e = mk_lambda_anon mk_Prop mk_Prop
+        t = mk_pi_anon mk_Type mk_Type
+        d = mk_definition empty_environment no_name [] t e in
+      case check empty_environment d of
+        Left (TypeMismatchAtDef _ _) -> hpass
+  it "DeclHasFreeVars" $ do
+    let d = mk_axiom no_name [] (mk_var 0) in
+      case check empty_environment d of
+        Left (DeclHasFreeVars _) -> hpass
+  it "DeclHasLocals" $ do
+    let d = mk_axiom no_name [] (mk_local no_name no_name mk_Prop BinderDefault) in
+      case check empty_environment d of
+        Left (DeclHasLocals _) -> hpass
+  it "NameAlreadyDeclared" $ do
+    let d = mk_axiom no_name [] mk_Prop in
+      case check empty_environment d of
+        Right cdecl -> case check (env_add empty_environment cdecl) d of
+          Left (NameAlreadyDeclared _) -> hpass
+  it "DuplicateLevelParamName" $ do
+    let n = mk_name ["undef"]
+        lp = mk_level_param n
+        d = mk_axiom no_name [n,n] (mk_sort lp) in
+      case check empty_environment d of
+        Left DuplicateLevelParamName -> hpass
+        _ -> hfail
+  it "ConstNotFound" $ do
+    let c = mk_constant (mk_name ["not-found"]) []
+        d = mk_axiom no_name [] c in
+      case check empty_environment d of
+        Left (ConstNotFound _) -> hpass
+        _ -> hfail
+  it "ConstHasWrongNumLevels" $ do
+    let c = mk_constant no_name [mk_zero]
+        d1 = mk_axiom no_name [] mk_Prop
+        d2 = mk_axiom (mk_name ["n"]) [] c
+      in
+      case check empty_environment d1 of
+        Right cdecl -> case check (env_add empty_environment cdecl) d2 of
+          Left (ConstHasWrongNumLevels _ _ _) -> hpass
+          _ -> hfail
+    
 spec :: Spec
 spec = do
   infer_lambda1
   infer_app1
   infer_const1
+  trigger_exceptions

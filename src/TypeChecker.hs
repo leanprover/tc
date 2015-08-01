@@ -34,17 +34,17 @@ import Environment
 import qualified EquivManager as EM
 
 data TypeError = UndefGlobalUniv Name
-               | UndefUnivParam Name
+               | UndefLevelParam Name
                | TypeExpected Expression
                | FunctionExpected Expression                 
                | TypeMismatchAtApp Expression Expression
                | TypeMismatchAtDef Expression Expression
-               | DefHasFreeVars Expression
-               | DefHasLocals Expression
+               | DeclHasFreeVars Expression
+               | DeclHasLocals Expression
                | NameAlreadyDeclared Declaration
-               | DuplicateParam
+               | DuplicateLevelParamName
                | ConstNotFound ConstantData
-               | WrongNumUnivParams Name [Name] [Level]
+               | ConstHasWrongNumLevels Name [Name] [Level]
                deriving (Eq,Show)
 
 data TypeChecker_R = TypeChecker_R {
@@ -89,9 +89,9 @@ check_main d = do
 
 tc_assert b err = if b then return () else throwE err
 
-check_no_local e = tc_assert (not $ has_local e) (DefHasLocals e)
+check_no_local e = tc_assert (not $ has_local e) (DeclHasLocals e)
 check_name name = asks tcr_env >>= (\env -> maybe (return ()) (throwE . NameAlreadyDeclared) (lookup_declaration env name))
-check_duplicated_params = asks tcr_level_names >>= (\lnames -> tc_assert (lnames == nub lnames) DuplicateParam)
+check_duplicated_params = asks tcr_level_names >>= (\lnames -> tc_assert (lnames == nub lnames) DuplicateLevelParamName)
 check_val_matches_ty ty val = do
   val_ty <- infer_type val
   is_eq <- is_def_eq val_ty ty
@@ -138,13 +138,13 @@ infer_type e = do
       modify (\tc -> tc { tcs_infer_type_cache = Map.insert e t infer_type_cache })
       return t
 
-check_closed e = tc_assert (not $ has_free_vars e) (DefHasFreeVars e)
+check_closed e = tc_assert (not $ has_free_vars e) (DeclHasFreeVars e)
 
 check_level :: Level -> TCMethod ()
 check_level level = do
   tcr <- ask
   maybe (return ()) (throwE . UndefGlobalUniv) (get_undef_global level (env_global_names $ tcr_env tcr))
-  maybe (return ()) (throwE . UndefUnivParam)  (get_undef_param level (tcr_level_names tcr))
+  maybe (return ()) (throwE . UndefLevelParam)  (get_undef_param level (tcr_level_names tcr))
 
 infer_constant :: ConstantData -> TCMethod Expression
 infer_constant c = do
@@ -153,7 +153,7 @@ infer_constant c = do
     Nothing -> throwE (ConstNotFound c)
     Just d -> do
       (d_level_names,c_levels) <- return $ (decl_level_names d, const_levels c)
-      tc_assert (length d_level_names == length c_levels) $ WrongNumUnivParams (const_name c) d_level_names c_levels
+      tc_assert (length d_level_names == length c_levels) $ ConstHasWrongNumLevels (const_name c) d_level_names c_levels
       mapM_ (\level -> check_level level) c_levels
       const_type <- return $ instantiate_univ_params (decl_type d) d_level_names c_levels
       return const_type
