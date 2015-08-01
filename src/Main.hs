@@ -194,13 +194,19 @@ splitAtStatements s = splitLines (lines s) where
       Just k -> (unlines $ x : (take (k+1) xs)) : splitLines (drop (k+1) xs)
     | otherwise = x : splitLines xs
 
+print_usage = putStrLn "usage: leantc <filename>"
+
 main = do
   args <- getArgs
-  content <- readFile (args !! 0)
---  print $ splitAtStatements content
-  print $ case evalState (runExceptT $ interpret . (map (parseStatement . lexStatement)) . splitAtStatements $ content) initial_context of
-    Left err -> show err
-    Right _ -> "Congratulations!"
+  case args of
+    [] -> print_usage
+    (_:_:_) -> print_usage
+    _ -> do
+      content <- readFile (args !! 0)
+      let statements = map (parseStatement . lexStatement) $ splitAtStatements content in
+        case evalState (runExceptT . interpret $ statements) initial_context of
+          Left err -> print err
+          Right _ -> print "Congratulations!"
 
 
 
