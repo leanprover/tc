@@ -44,7 +44,7 @@ unit_spec =
         it "should use dependent elimination" $ do
           m_dep_elim unit_exec `shouldBe` True
         it "should elim to any Type" $ do
-          m_elim_level unit_exec `shouldBe` (Just (mk_level_param (mk_special_name "elim_level")))
+          m_elim_level unit_exec `shouldBe` (Just (mk_level_param (mk_system_name_s "elim_level")))
         it "should simplify unit.rec" $ do
           case tc_run (m_env unit_exec) [] 0 (TypeChecker.whnf unit_rec_example) of
             Right e -> e `shouldBe` star_const
@@ -134,7 +134,7 @@ list_spec =
         it "should use dependent elimination" $ do
           m_dep_elim list_exec `shouldBe` True
         it "should elim to any Type" $ do
-          m_elim_level list_exec `shouldBe` (Just (mk_level_param (mk_special_name "elim_level")))
+          m_elim_level list_exec `shouldBe` (Just (mk_level_param (mk_system_name_s "elim_level")))
 {-        it "should have correct comp rule" $ do
           let env = m_env list_exec
               ext = env_ind_ext env
@@ -171,18 +171,19 @@ eq_spec =
         it "should not throw an error" $ do
           eq_eval `shouldBe` (Right ())
         it "should be at level zero" $ do
-          m_it_levels eq_exec `shouldBe` [mk_level_zero]
+          m_it_levels eq_exec `shouldBe` [mk_zero]
         it "should have 3 it_num_arg" $ do
           m_it_num_args eq_exec `shouldBe` [3]
         it "should have 2 param_const, Type.{l1} and something of that type" $ do
-          map local_type (m_param_consts eq_exec) `shouldBe` [type_l1, Local $ mk_local_data (mk_system_name 0) Anonymous type_l1]
+          -- TODO '3' is not stable
+          map local_type (m_param_consts eq_exec) `shouldBe` [type_l1, Local $ mk_local_data (mk_system_name_i 3) no_name type_l1]
         it "should have `eq` as it_const" $ do
           m_it_consts eq_exec `shouldBe` [ConstantData eq_name [eq_lp]]
         -- TODO why not
         it "should not use dependent elimination" $ do
           m_dep_elim eq_exec `shouldBe` False
         it "should elim to any Type" $ do
-          m_elim_level eq_exec `shouldBe` (Just (mk_level_param (mk_special_name "elim_level")))
+          m_elim_level eq_exec `shouldBe` (Just (mk_level_param (mk_system_name_s "elim_level")))
 
 check_no_inductive_type_decls = do
   describe "NoInductiveTypeDecls" $ 

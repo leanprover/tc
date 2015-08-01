@@ -9,7 +9,11 @@ Universe levels
 -}
 module Level (Level (..),SuccData (..),MaxCoreData (..),mk_zero,mk_succ,mk_max,mk_imax,mk_level_param,mk_global_univ,
               level_leq,level_equiv,instantiate_level,has_param,
-              mk_level_one,mk_level_two,get_undef_global,get_undef_param,is_zero,is_definitely_not_zero) where
+              mk_level_one,mk_level_two,get_undef_global,get_undef_param,is_zero,is_definitely_not_zero,
+              -- just for testing
+              mk_iterated_succ,normalize_level,replace_in_level
+             )
+where
   
 import Control.Monad
 import Name

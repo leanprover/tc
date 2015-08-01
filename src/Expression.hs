@@ -18,7 +18,9 @@ module Expression (Expression (..),
                    get_operator,get_app_args,get_app_op_args,body_of_lambda,
                    mk_Prop,mk_app_seq,
                    find_in_expr,
-                   maybe_constant)
+                   maybe_constant,
+                   -- just for testing
+                   expr_has_param_univ,get_free_var_range,mk_Type,mk_Type2)
 where
 
 import Control.Monad
