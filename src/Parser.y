@@ -10,6 +10,7 @@ Parse the Lean kernel export format
 -}
 module Parser (parse_statement,lex_statement,Statement (..), IDecl (..), IIntro (..)) where
 import Data.Char
+import Numeric
 import Expression
 }
 
@@ -133,7 +134,7 @@ lex_statement (c:cs)
     | isDigit c = lex_int (c:cs)
     | otherwise = lex_word (c:cs)
 
-lex_int cs = TokenInt (read num) : lex_statement rest
+lex_int cs = TokenInt (fst $ (readDec num)!!0) : lex_statement rest
       where (num,rest) = span isDigit cs
 
 lex_word cs = case span (not . isSpace) cs of
