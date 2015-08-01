@@ -55,10 +55,11 @@ data TypeChecker = TypeChecker {
   tc_env :: Environment ,
   tc_level_names :: [Name] ,
   tc_next_id :: Integer ,
-  tc_equiv_manager :: EM.EquivManager
+  tc_equiv_manager :: EM.EquivManager,
+  tc_infer_type_cache :: Map Expression Expression
   }
 
-mk_type_checker env level_names next_id = TypeChecker env level_names next_id EM.empty_equiv_manager
+mk_type_checker env level_names next_id = TypeChecker env level_names next_id EM.empty_equiv_manager Map.empty
 
 type TCMethod = ExceptT TypeError (State TypeChecker)
 
@@ -129,15 +130,21 @@ ensure_pi e = case e of
 
 infer_type :: Expression -> TCMethod Expression
 infer_type e = do
---  trace ("infer_type: " ++ show e ++ "\n") return ()
   check_closed e
-  case e of
-    Local local -> return $ local_type local
-    Sort sort -> let level = sort_level sort in check_level level >> return (mk_sort (mk_succ level))
-    Constant constant -> infer_constant constant
-    Lambda lambda -> infer_lambda lambda
-    Pi pi -> infer_pi pi
-    App app -> infer_app app
+  infer_type_cache <- gets tc_infer_type_cache
+  case Map.lookup e infer_type_cache of
+    Just t -> return t
+    Nothing -> do 
+      t <- case e of
+        Local local -> return $ local_type local
+        Sort sort -> let level = sort_level sort in check_level level >> return (mk_sort (mk_succ level))
+        Constant constant -> infer_constant constant
+        Lambda lambda -> infer_lambda lambda
+        Pi pi -> infer_pi pi
+        App app -> infer_app app
+      infer_type_cache <- gets tc_infer_type_cache
+      modify (\tc -> tc { tc_infer_type_cache = Map.insert e t infer_type_cache })
+      return t
 
 check_closed e = tc_assert (not $ has_free_vars e) (DefHasFreeVars e)
 
