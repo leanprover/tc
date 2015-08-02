@@ -10,10 +10,9 @@ https://github.com/leanprover/lean
 
 The code follows the design of the Lean kernel closely, except can be made simpler since it does not need to integrate with parsing and elaboration, and because it need not be as performant.
 
-### Todo
+#### Build Instructions
 
-1. Setup haddock with cabal for building documentation
-2. Add section headers to organize haddock documentation
-3. Setup doctest and hspec with cabal
-4. Write many more tests
-5. Write extensive tutorial-level comments (possibly in Literate Haskell)
+    cabal configure --enable-tests
+    cabal build
+    cabal test -- run tests
+    cabal install -- (optional)
