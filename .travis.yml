@@ -1,0 +1,12 @@
+os:
+  - linux
+language: haskell
+sudo: false
+
+script:
+ - cabal update
+ - cabal install containers disjoint-set hspec mtl transformers || true
+ - cabal configure --enable-tests
+ - cabal build
+ - cabal test 
+
