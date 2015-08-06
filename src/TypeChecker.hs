@@ -37,7 +37,7 @@ import qualified EquivManager as EM
 data TypeError = UndefGlobalUniv Name
                | UndefLevelParam Name
                | TypeExpected Expression
-               | FunctionExpected Expression                 
+               | FunctionExpected Expression
                | TypeMismatchAtApp Expression Expression
                | TypeMismatchAtDef Expression Expression
                | DeclHasFreeVars Expression
@@ -51,7 +51,7 @@ data TypeError = UndefGlobalUniv Name
 data TypeChecker_R = TypeChecker_R {
   tcr_env :: Environment ,
   tcr_level_names :: [Name]
-}  
+}
 
 data TypeChecker_S = TypeChecker_S {
   tcs_next_id :: Integer ,
@@ -127,7 +127,7 @@ infer_type e = do
   infer_type_cache <- gets tcs_infer_type_cache
   case Map.lookup e infer_type_cache of
     Just t -> return t
-    Nothing -> do 
+    Nothing -> do
       t <- case e of
         Local local -> return $ local_type local
         Sort sort -> let level = sort_level sort in check_level level >> return (mk_sort (mk_succ level))
@@ -163,7 +163,7 @@ mk_local_for :: BindingData -> TCMethod LocalData
 mk_local_for bind = do
   next_id <- gensym
   return $ mk_local_data_full (mk_system_name_i next_id) (binding_name bind) (binding_domain bind) (binding_info bind)
-  
+
 infer_lambda :: BindingData -> TCMethod Expression
 infer_lambda lam = do
   domain_ty <- infer_type (binding_domain lam)
@@ -309,7 +309,7 @@ is_def_eq_core t s = do
 
   is_eq_eta_expansion t_n s_n
   asks tcr_env >>= (\env -> deq_try_if (is_prop_proof_irrel env) $ is_def_proof_irrel t_n s_n)
-  
+
 
 reduce_def_eq :: Expression -> Expression -> DefEqMethod (Expression,Expression)
 reduce_def_eq t s = do
@@ -330,7 +330,7 @@ ext_reduction_step t_n s_n = do
     (Nothing,Just s_n) -> do s_nn <- lift $ whnf_core s_n
                              return (t_n,s_nn,Continue)
     (Just t_n,Just s_n) -> do t_nn <- lift $ whnf_core t_n
-                              s_nn <- lift $ whnf_core s_n                              
+                              s_nn <- lift $ whnf_core s_n
                               return (t_nn,s_nn,Continue)
 
   case status of
@@ -341,7 +341,7 @@ lazy_delta_reduction :: Expression -> Expression -> DefEqMethod (Expression,Expr
 lazy_delta_reduction t s = do
   (t_n,s_n,status) <- lazy_delta_reduction_step t s
   case status of
-    DefUnknown -> return (t_n,s_n)    
+    DefUnknown -> return (t_n,s_n)
     Continue -> lazy_delta_reduction t_n s_n
 
 data ReductionStatus = Continue | DefUnknown
@@ -405,7 +405,7 @@ is_def_eq_app t s =
   deq_try_and [is_def_eq_main (get_operator t) (get_operator s),
                throwE (genericLength (get_app_args t) == genericLength (get_app_args s)),
                mapM_ (uncurry is_def_eq_main) (zip (get_app_args t) (get_app_args s))]
-  
+
 is_eq_eta_expansion :: Expression -> Expression -> DefEqMethod ()
 is_eq_eta_expansion t s = deq_try_or [is_eq_by_eta_expansion_core t s, is_eq_by_eta_expansion_core s t]
 
@@ -421,7 +421,7 @@ is_eq_by_eta_expansion_core t s = go t s where
         deq_commit_to (is_def_eq_main t new_s)
       _ -> throwE False
   go _ _ = throwE False
-  
+
 is_prop :: Expression -> TCMethod Bool
 is_prop e = do
   e_ty <- infer_type e
@@ -476,7 +476,7 @@ em_add_equiv e1 e2 = do
 
 em_is_equiv :: Expression -> Expression -> DefEqMethod ()
 em_is_equiv e1 e2 = do
-  eqv <- gets tcs_equiv_manager  
+  eqv <- gets tcs_equiv_manager
   let (is_equiv,new_eqv) = EM.is_equiv e1 e2 eqv in do
     modify (\tc -> tc { tcs_equiv_manager = new_eqv })
     if is_equiv then throwE True else return ()
@@ -521,12 +521,12 @@ inductive_norm_ext e = do
           Nothing -> regular_comp_rule einfo elim_fn_const major
           Just result -> return result
       | otherwise = regular_comp_rule einfo elim_fn_const major
-    regular_comp_rule :: ExtElimInfo -> ConstantData -> Expression -> MaybeT TCMethod (Expression,CompRule)                    
+    regular_comp_rule :: ExtElimInfo -> ConstantData -> Expression -> MaybeT TCMethod (Expression,CompRule)
     regular_comp_rule einfo elim_fn_const major = do
       intro_app <- lift $ whnf major
       comp_rule <- is_intro_for (const_name elim_fn_const) intro_app
       return (intro_app,comp_rule)
-    
+
 
 -- | Return 'True' if 'e' is an introduction rule for an eliminator named 'elim'
 is_intro_for :: Name -> Expression -> MaybeT TCMethod CompRule
@@ -563,7 +563,7 @@ get_first_intro env op_name = do
   return ir_name
 
 mk_nullary_intro :: Environment -> Expression -> Integer -> Maybe Expression
-mk_nullary_intro env app_type num_params = 
+mk_nullary_intro env app_type num_params =
   let (op,args) = get_app_op_args app_type in do
     op_const <- maybe_constant op
     intro_name <- get_first_intro env (const_name op_const)

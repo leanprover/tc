@@ -136,13 +136,13 @@ interpret_statement statement =
                                   if Set.member name (env_global_names old_env)
                                   then throwE . ExportError $ RepeatedUNI
                                   else modify (\c -> c { global_env = env_add_uni old_env name })
-                                    
+
     StatementDEF name_idx level_name_idxs type_idx value_idx ->
       do mn <- gets name_map
          me <- gets expr_map
          old_env <- gets global_env
          did <- gets def_id
-         modify (\s -> s { def_id = did + 1 })         
+         modify (\s -> s { def_id = did + 1 })
          let name = mn Map.! name_idx
              level_names = map (mn Map.!) level_name_idxs
              def_type = me Map.! type_idx
@@ -152,7 +152,7 @@ interpret_statement statement =
            case TypeChecker.check old_env decl of
              Left err -> throwE $ TypeError err
              Right cdecl -> modify (\c -> c { global_env = env_add old_env cdecl })
-           
+
     StatementAX name_idx level_name_idxs type_idx ->
       do mn <- gets name_map
          me <- gets expr_map
@@ -178,7 +178,7 @@ register_inductive env mdecl =
     Left err -> throwE $ InductiveDeclError err
     Right env -> return env
 
-    
+
 
 isBIND x = case words x of
   ("#BIND" : _) -> True
@@ -208,7 +208,3 @@ main = do
         case evalState (runExceptT . interpret $ statements) initial_context of
           Left err -> print err
           Right _ -> print "Congratulations!"
-
-
-
-

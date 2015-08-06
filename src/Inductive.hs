@@ -47,7 +47,7 @@ data InductiveDeclError = NoInductiveTypeDecls
                         | NumParamsMismatchInInductiveDecl Integer Integer
                         | ArgDoesNotMatchInductiveParameters Integer Name
                         | UniLevelOfArgTooBig Integer Name Level Level
-                        | OneInPropAllInProp 
+                        | OneInPropAllInProp
                         | NonRecArgAfterRecArg Integer Name
                         | InvalidRecArg Integer Name
                         | InvalidReturnType Name
@@ -73,7 +73,7 @@ data AddInductiveData = AddInductiveData {
   m_idecls :: [InductiveDecl],
   m_is_not_zero :: Bool,
   m_levels :: [Level],
-  m_next_id :: Integer, 
+  m_next_id :: Integer,
   m_elim_level :: Maybe Level,
   m_dep_elim :: Bool,
 
@@ -86,7 +86,7 @@ data AddInductiveData = AddInductiveData {
   m_K_target :: Bool
 }
 
-mk_add_inductive_data env level_names num_params idecls = AddInductiveData { 
+mk_add_inductive_data env level_names num_params idecls = AddInductiveData {
   m_env = env,
   m_level_names = level_names,
   m_num_params = num_params,
@@ -123,7 +123,7 @@ add_inductive env mdecl =
   case a of
     Left err -> Left err
     Right () -> Right $ m_env s
-  
+
 type AddInductiveMethod = ExceptT InductiveDeclError (State AddInductiveData)
 
 ind_run ind_fn env level_names num_params idecls = runState (runExceptT ind_fn) (mk_add_inductive_data env level_names num_params idecls)
@@ -149,12 +149,12 @@ check_inductive_types = do
     idecl : idecls -> do check_inductive_idecl True idecl
                          mapM_ (check_inductive_idecl False) idecls
 
-  
+
 check_inductive_idecl :: Bool -> InductiveDecl -> AddInductiveMethod ()
 check_inductive_idecl first (InductiveDecl name ty intro_rules) = do
   level_names <- gets m_level_names
   check_type ty level_names
-  check_inductive_idecl_core first 0 name ty 
+  check_inductive_idecl_core first 0 name ty
 
 mk_local_for :: BindingData -> AddInductiveMethod LocalData
 mk_local_for bind = do
@@ -192,7 +192,7 @@ handle_impredicative_env :: Bool -> SortData -> AddInductiveMethod ()
 handle_impredicative_env True sort = modify (\ind_data -> ind_data { m_is_not_zero = is_definitely_not_zero (sort_level sort) })
 handle_impredicative_env False sort = do
   is_not_zero <- gets m_is_not_zero
-  ind_assert (is_definitely_not_zero (sort_level sort) == is_not_zero) OneInPropAllInProp 
+  ind_assert (is_definitely_not_zero (sort_level sort) == is_not_zero) OneInPropAllInProp
 
 -- Add all datatype declarations to environment.
 declare_inductive_types :: AddInductiveMethod ()
@@ -273,7 +273,7 @@ has_it_occ ty = do
   return . Maybe.isJust $ find_in_expr (\e _ -> case e of
                             Constant const -> const_name const `elem` (map const_name it_consts)
                             _ -> False) ty
-    
+
 {- Return some(d_idx) iff \c t is a recursive argument, \c d_idx is the index of the recursive inductive datatype.
    Return none otherwise. -}
 is_rec_argument ty = do
@@ -303,7 +303,7 @@ get_valid_it_app_idx ty = do
   case valid_it_app of
     Left d_idx -> return $ Just d_idx
     Right () -> return $ Nothing
-  
+
 is_valid_it_app_core :: Expression -> ExceptT Integer AddInductiveMethod ()
 is_valid_it_app_core ty = do
   it_consts <- gets m_it_consts
@@ -375,7 +375,7 @@ check_condition1 (Pi pi) param_num = do
     then do sort <- ensure_type (binding_domain pi)
             return $ if not (is_zero (sort_level sort)) then (ty,local : rest) else (ty,rest)
     else return (ty,rest)
-            
+
 check_condition1 ty _ = return (ty,[])
 
 -- Initialize m_elim_level.
@@ -413,9 +413,9 @@ populate_C_indices_major (InductiveDecl name ty intro_rules) d_idx = do
 
 build_indices :: Expression -> Integer -> AddInductiveMethod ([LocalData],Expression)
 build_indices (Pi pi) param_num = do
-  num_params <- gets m_num_params  
+  num_params <- gets m_num_params
   use_param <- return $ param_num < num_params
-  local <- if use_param 
+  local <- if use_param
            then liftM (flip genericIndex param_num . m_param_consts) get
            else mk_local_for pi
   (indices,body) <- build_indices (instantiate (binding_body pi) (Local local)) (param_num+1)
@@ -449,7 +449,7 @@ build_ir_args rec_args nonrec_args ir_name ir_type param_num = do
         then build_ir_args (rec_args ++ [local]) nonrec_args ir_name (instantiate (binding_body pi) (Local local)) (param_num+1)
         else build_ir_args rec_args (nonrec_args ++ [local]) ir_name (instantiate (binding_body pi) (Local local)) (param_num+1)
     _ -> return (rec_args,nonrec_args,ir_type)
-    
+
 populate_minor_premises_ir d_idx (IntroRule ir_name ir_type) = do
   (rec_args,nonrec_args,ir_type) <- build_ir_args [] [] ir_name ir_type 0
   (it_idx,it_indices) <- get_I_indices ir_type
@@ -470,7 +470,7 @@ populate_minor_premises_ir d_idx (IntroRule ir_name ir_type) = do
   -- we have one ind_arg for each rec_arg
   -- whenever we take an argument of the form (Pi other_type ind_type), we get to assume `C` holds for every possible output
   ind_args <- build_ind_args (zip rec_args [0..])
-  fresh_name_minor <- mk_fresh_name      
+  fresh_name_minor <- mk_fresh_name
   minor_ty <- return $ abstract_pi_seq nonrec_args
               (abstract_pi_seq rec_args
                (abstract_pi_seq ind_args c_app))
@@ -527,7 +527,7 @@ get_elim_name_idx it_idx = do
   case genericIndex idecls it_idx of
     InductiveDecl name _ _ -> return $ get_elim_name name
 
-abstract_all_introduction_rules elim_type = 
+abstract_all_introduction_rules elim_type =
   gets m_elim_infos >>= return .
   (foldr (\(ElimInfo _ _ _ minor_premises) elim_type ->
           foldr (\minor_premise elim_type ->
@@ -535,7 +535,7 @@ abstract_all_introduction_rules elim_type =
           elim_type
           minor_premises)
     elim_type)
-  
+
 abstract_all_type_formers elim_type =
   gets m_elim_infos >>= return . (foldr (\(ElimInfo c _ _ _) elim_type -> abstract_pi c elim_type) elim_type)
 
@@ -673,7 +673,7 @@ push_minor_premise d_idx minor_premise = do
 update_m_env f = do
   env <- gets m_env
   modify (\ind_data -> ind_data { m_env = f env })
-           
+
 {- Extensions -}
 
 ext_add_inductive_info = do
@@ -682,7 +682,7 @@ ext_add_inductive_info = do
                 (m_num_params ind_data)
                 (m_idecls ind_data))
 
-ext_add_intro_info ir_name ind_name = update_m_env $ ind_ext_add_intro_info ir_name ind_name 
+ext_add_intro_info ir_name ind_name = update_m_env $ ind_ext_add_intro_info ir_name ind_name
 
 ext_add_elim ind_name num_indices = do
   elim_level_param_names <- get_elim_level_param_names
@@ -702,4 +702,3 @@ ext_add_elim ind_name num_indices = do
 
 ext_add_comp_rhs ir_name elim_name num_rec_args_nonrec_args comp_rhs =
   update_m_env (ind_ext_add_comp_rhs ir_name elim_name num_rec_args_nonrec_args comp_rhs)
-
