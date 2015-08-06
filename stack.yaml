@@ -1,0 +1,7 @@
+flags: {}
+packages:
+- '.'
+extra-deps:
+- disjoint-set-0.2
+
+resolver: nightly-2015-08-06
