@@ -7,6 +7,7 @@ Maintainer  : daniel.selsam@gmail.com
 
 The TypeChecker modules includes the core type-checker, whnf, is_def_eq, and both normalizer extensions.
 -}
+{-# LANGUAGE FlexibleContexts #-}
 module TypeChecker (TypeError (..),
                     tc_eval,tc_run,
                     check,check_main,

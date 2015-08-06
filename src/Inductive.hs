@@ -7,6 +7,7 @@ Maintainer  : daniel.selsam@gmail.com
 
 The Inductive module processes inductive declarations and generates eliminators.
 -}
+{-# LANGUAGE FlexibleContexts #-}
 module Inductive (InductiveDeclError (..),add_inductive,
                   -- just for testing
                  AddInductiveData (..), ind_run,ind_exec,ind_eval,add_inductive_core
