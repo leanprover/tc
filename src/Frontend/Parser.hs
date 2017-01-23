@@ -86,9 +86,9 @@ parseExportFile = sepEndBy1 parseStatement newline >> eof
     parseDEF = do
       string "#DEF" >> blank
       nameIdx <- parseInteger <* blank
-      lpNameIdxs <- (endBy parseInteger blank) <* string "| "
       typeIdx <- parseInteger <* blank
       valueIdx <- parseInteger
+      lpNameIdxs <- many (blank *> parseInteger)
       lift $ do
         name <- uses ctxNameMap (Map.! nameIdx)
         lpNames <- uses ctxNameMap (\m -> map (m Map.!) lpNameIdxs)
@@ -105,8 +105,8 @@ parseExportFile = sepEndBy1 parseStatement newline >> eof
     parseAX = do
       string "#AX" >> blank
       nameIdx <- parseInteger <* blank
-      lpNameIdxs <- (endBy parseInteger blank) <* string "| "
       typeIdx <- parseInteger
+      lpNameIdxs <- many (blank *> parseInteger)
       lift $ do
         name <- uses ctxNameMap (Map.! nameIdx)
         lpNames <- uses ctxNameMap (\m -> map (m Map.!) lpNameIdxs)
@@ -122,11 +122,11 @@ parseExportFile = sepEndBy1 parseStatement newline >> eof
     parseIND = do
       string "#IND" >> blank
       numParams <- parseInt <* blank
-      lpNameIdxs <- (endBy parseInteger blank) <* string "| "
       indNameIdx <- parseInteger <* blank
       indTypeIdx <- parseInteger <* blank
       numIntroRules <- parseInt
       introRules <- count numIntroRules parseIntroRule
+      lpNameIdxs <- many (blank *> parseInteger)
       lift $ do
         indName <- uses ctxNameMap (Map.! indNameIdx)
         lpNames <- uses ctxNameMap (\m -> map (m Map.!) lpNameIdxs)
@@ -140,10 +140,8 @@ parseExportFile = sepEndBy1 parseStatement newline >> eof
 
     parseIntroRule :: ParserMethod IntroRule
     parseIntroRule = do
-      newline
-      string "#INTRO" >> blank
-      irNameIdx <- parseInteger <* blank
-      irTypeIdx <- parseInteger
+      irNameIdx <- blank *> parseInteger
+      irTypeIdx <- blank *> parseInteger
       lift $ do
         irName <- uses ctxNameMap (Map.! irNameIdx)
         irType <- uses ctxExprMap (Map.! irTypeIdx)
