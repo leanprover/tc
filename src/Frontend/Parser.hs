@@ -47,7 +47,6 @@ makeLenses ''Context
 blank = char ' '
 
 mkStdContext = Context (Map.insert 0 noName Map.empty) (Map.insert 0 mkZero Map.empty) Map.empty mkStdEnv 0 0
-mkHottContext = Context (Map.insert 0 noName Map.empty) (Map.insert 0 mkZero Map.empty) Map.empty mkHottEnv 0 0
 
 type ParserMethod = ParsecT String () (ExceptT ExportError (S.State Context))
 
@@ -293,10 +292,10 @@ parseExportFile = sepEndBy1 parseStatement newline >> eof
     parseBS = string "#BS" >> return BinderStrict
     parseBC = string "#BC" >> return BinderClass
 
-typeCheckExportFile :: Bool -> String -> String -> Either String ()
-typeCheckExportFile useStd filename fileContents =
+typeCheckExportFile :: String -> String -> Either String ()
+typeCheckExportFile filename fileContents =
   case S.evalState (runExceptT (runParserT parseExportFile () filename fileContents))
-       (if useStd then mkStdContext else mkHottContext) of
+       mkStdContext of
    Left parseErr -> Left $ show parseErr
    Right (Left kernelErr) -> Left $ show kernelErr
    Right (Right _) -> Right ()

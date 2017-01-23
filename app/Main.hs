@@ -13,12 +13,7 @@ main = do
     [] -> printUsage
     (_:_:_) -> printUsage
     [filename] -> do
-      let useStd = isSuffixOf ".out" filename
-      let useHott = isSuffixOf ".hout" filename
-      if useStd || useHott
-      then do
         fileContents <- readFile filename
-        case typeCheckExportFile useStd filename fileContents of
+        case typeCheckExportFile filename fileContents of
           Left err -> putStrLn err
           Right _ -> putStrLn "Congratulations!"
-      else printUsage
