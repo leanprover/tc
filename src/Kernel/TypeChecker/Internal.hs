@@ -97,7 +97,6 @@ data Env = Env {
 makeLenses ''Env
 
 mkStdEnv = Env Map.empty Set.empty mkEmptyInductiveExt True False True True
-mkHottEnv = Env Map.empty Set.empty mkEmptyInductiveExt False True False False
 
 {- Decls -}
 
