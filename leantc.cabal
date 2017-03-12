@@ -14,7 +14,7 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Lib, Kernel.Name, Kernel.Name.Internal, Kernel.Level, Kernel.Level.Internal, Kernel.Expr, Kernel.Expr.Internal, Kernel.TypeChecker.Internal, Kernel.TypeChecker, Kernel.Inductive.Internal, Kernel.Inductive, Frontend.Parser
+  exposed-modules:     Lib, Kernel.Name, Kernel.Name.Internal, Kernel.Level, Kernel.Level.Internal, Kernel.Expr, Kernel.Expr.Internal, Kernel.TypeChecker.Internal, Kernel.TypeChecker, Kernel.Inductive.Internal, Kernel.Inductive, Frontend.Parser, Kernel.Quotient
   build-depends:       base >= 4.7 && < 5
                      , containers
                      , lens-simple

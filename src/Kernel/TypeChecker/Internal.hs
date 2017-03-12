@@ -17,7 +17,7 @@ import Control.Monad.Trans.Except
 import Control.Monad.Trans.Maybe
 
 import Data.List (nub, (!!), take, drop, splitAt, length)
-import Lens.Simple (makeLenses, over, view, use, (.=), (%=), (<~), (%%=))
+import Lens.Simple (makeLenses, set, over, view, use, (.=), (%=), (<~), (%%=))
 
 import qualified Data.Set as Set
 import Data.Set (Set)
@@ -88,16 +88,15 @@ data Env = Env {
   _envDecls :: Map Name Decl,
   _envGlobalNames :: Set Name,
   _envIndExt :: InductiveExt,
-  _envQuotEnabled :: Bool,
-  _envHitsEnabled :: Bool,
-  _envPropProofIrrel :: Bool,
-  _envPropImpredicative :: Bool
+  _envQuotEnabled :: Bool
   } deriving (Show)
 
 makeLenses ''Env
 
-mkStdEnv = Env Map.empty Set.empty mkEmptyInductiveExt True False True True
-mkHottEnv = Env Map.empty Set.empty mkEmptyInductiveExt False True False False
+mkStdEnv = Env Map.empty Set.empty mkEmptyInductiveExt False
+
+initQuotients :: Env -> Env
+initQuotients env = set envQuotEnabled True env
 
 {- Decls -}
 
@@ -149,7 +148,9 @@ data TypeError = UndefGlobalLevel Name
                | DuplicateLevelParamName
                | ConstNotFound Name
                | ConstHasWrongNumLevels Name [Name] [Level]
-               deriving (Eq,Show)
+               | LetNoName LetData
+               | LetTypeMismatch LetData
+                 deriving (Eq,Show)
 
 data TypeCheckerR = TypeCheckerR {
   _tcrEnv :: Env ,
@@ -264,6 +265,7 @@ inferType e = {-# SCC "inferType" #-} do
         Lambda lambda -> inferLambda lambda
         Pi pi -> inferPi pi
         App app -> inferApp app
+        Let lett -> inferLet lett
       tcsInferTypeCache %= Map.insert e ty
       return ty
 
@@ -299,8 +301,7 @@ inferPi pi = do
   bodyTy <- inferType (instantiate (bindingBody pi) (Local local))
   bodyTyAsSort <- ensureSort bodyTy
   env <- asks _tcrEnv
-  return $ mkSort ((if view envPropImpredicative env then mkIMax else mkMax)
-                   (sortLevel domainTyAsSort) (sortLevel bodyTyAsSort))
+  return $ mkSort (mkIMax (sortLevel domainTyAsSort) (sortLevel bodyTyAsSort))
 
 inferApp :: AppData -> TCMethod Expr
 inferApp app = do
@@ -310,6 +311,15 @@ inferApp app = do
   isEq <- isDefEq (bindingDomain fnTyAsPi) argTy
   if isEq then return $ instantiate (bindingBody fnTyAsPi) (appArg app)
     else throwE $ TypeMismatchAtApp (bindingDomain fnTyAsPi) argTy
+
+inferLet :: LetData -> TCMethod Expr
+inferLet lett = do
+  tcAssert (letName lett /= noName) (LetNoName lett)
+  ensureType (letType lett)
+  valType <- inferType (letVal lett)
+  isEq <- isDefEq (letType lett) valType
+  tcAssert isEq (LetTypeMismatch lett)
+  inferType $ instantiate (letBody lett) (letVal lett)
 
 {- Weak-head normal form (whnf) -}
 
@@ -351,6 +361,7 @@ whnfCore e = case e of
                       remainingArgs = take (length revArgs - m) revArgs in
                    whnfCore (mkRevAppSeq (instantiateSeq body argsToInstantiate) remainingArgs)
       _ -> if op_n == op then return e else whnfCore (mkRevAppSeq op_n revArgs)
+  Let lett -> whnfCore (instantiate (letBody lett) (letVal lett))
   _ -> return e
   where
     bodyOfLambdaN :: Int -> Expr -> (Int, Expr)
@@ -381,7 +392,7 @@ unfoldNameCore e = case e of
 
 -- TODO(dhs): check for bools and support HoTT
 normalizeExt :: Expr -> TCMethod (Maybe Expr)
-normalizeExt e = runMaybeT (inductiveNormExt e `mplus` quotientNormExt e `mplus` hitsNormExt e)
+normalizeExt e = runMaybeT (inductiveNormExt e `mplus` quotientNormExt e)
 
 gensym :: TCMethod Integer
 gensym = tcsNextId %%= \n -> (n, n + 1)
@@ -443,8 +454,7 @@ isDefEqCore t s = do
 
   isDefEqEta t_nn s_nn
   env <- asks _tcrEnv
-  deqTryIf (view envPropProofIrrel env) $ isDefEqProofIrrel t_nn s_nn
-
+  isDefEqProofIrrel t_nn s_nn
 
 reduceDefEq :: Expr -> Expr -> DefEqMethod (Expr, Expr)
 reduceDefEq t s = do
@@ -673,35 +683,6 @@ quotientNormExt e = do
       quotLift = mkName ["quot","lift"]
       quotInd = mkName ["quot","ind"]
       quotMk = mkName ["quot","mk"]
-
-{- Homotopy type theory -}
-
-hitsNormExt :: Expr -> MaybeT TCMethod Expr
-hitsNormExt e = do
-  env <- asks _tcrEnv
-  guard $ view envHitsEnabled env
-  op <- liftMaybe $ maybeConstant (getOperator e)
-  (mkPos, mkName, fPos) <- if constName op == truncRec then return (5, truncTr, 4) else
-                             if constName op == quotientRec then return (5, quotientClassOf, 3) else
-                               fail "no hit comp rule applies"
-  args <- return $ getAppArgs e
-  guard $ length args > mkPos
-  mk <- lift . whnf $ args !! mkPos
-  case mk of
-    App mkAsApp -> do
-      let mkOp = getOperator mk
-      mkOpConst <- liftMaybe $ maybeConstant mkOp
-      guard $ constName mkOpConst == mkName
-      let f = args !! fPos
-      let elimArity = mkPos + 1
-      let extraArgs = drop elimArity args
-      return $ mkAppSeq (mkApp f (appArg mkAsApp)) extraArgs
-    _ -> fail "element of type 'trunc' not constructed with 'trunc.tr'"
-    where
-      truncRec = mkName ["trunc", "rec"]
-      truncTr = mkName ["trunc", "tr"]
-      quotientRec = mkName ["quotient", "rec"]
-      quotientClassOf = mkName ["quotient","class_of"]
 
 {- Adding to the environment -}
 

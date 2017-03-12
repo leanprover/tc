@@ -13,12 +13,11 @@ module Kernel.TypeChecker (
   , CompRule(CompRule)
   , ElimInfo(ElimInfo)
   , Env
-  , mkStdEnv, mkHottEnv
+  , mkStdEnv, initQuotients
   , envAddIndDecl, envAddIntroRule, envAddElimInfo, envAddCompRule
   , envHasGlobalLevel, envAddGlobalLevel
   , envLookupDecl
   , envAddAxiom, envAddDefinition
-  , envPropProofIrrel, envPropImpredicative
   , TypeError, TCMethod
   , ensureSort, ensureType
   , tcEval, tcRun
